@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: ironecho-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD:-password}
+      MONGO_INITDB_DATABASE: ironecho
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - ironecho-network
+
+  api:
+    build: 
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ironecho-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MONGODB_URI: mongodb://${MONGODB_USERNAME:-admin}:${MONGODB_PASSWORD:-password}@mongodb:27017/ironecho?authSource=admin
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CORS_ORIGIN: ${CORS_ORIGIN}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongodb
+    networks:
+      - ironecho-network
+    volumes:
+      - ./logs:/app/logs
+
+  nginx:
+    image: nginx:alpine
+    container_name: ironecho-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+    networks:
+      - ironecho-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  ironecho-network:
+    driver: bridge

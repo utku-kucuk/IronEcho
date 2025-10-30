@@ -161,9 +161,9 @@ export class ProgressiveOverloadCalculator {
       suggestions.push({
         exerciseName,
         currentMax: { volume: currentVolume },
-        suggested: { volume: currentVolume + volumeIncrease },
+        suggested: { weight: currentVolume + volumeIncrease },
         reason: 'Increase total volume by 5% for progressive overload',
-        type: 'volume'
+        type: 'weight'
       });
     }
 
@@ -291,18 +291,18 @@ export class ProgressiveOverloadCalculator {
   }
 
   // Check if current workout is a PR
-  isPersonalRecord(
+  async isPersonalRecord(
     exerciseName: string, 
     userId: string, 
     currentVolume: number
-  ): boolean {
-    const history = this.getExerciseHistory(exerciseName, userId, 50);
+  ): Promise<boolean> {
+    const history = await this.getExerciseHistory(exerciseName, userId, 50);
     
-    if (history.workouts.length === 0) {
+    if (history.length === 0) {
       return true; // First workout is always a PR
     }
     
-    const maxVolume = Math.max(...history.workouts.map(w => w.totalVolume));
+    const maxVolume = Math.max(...history.map(w => w.totalVolume));
     return currentVolume > maxVolume;
   }
 }

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import {
   Box,
   VStack,
@@ -89,7 +90,6 @@ export default function AuthScreen() {
       toast.show({
         title: 'Error',
         description: error.message || 'Authentication failed',
-        status: 'error'
       });
     } finally {
       setIsLoading(false);
@@ -108,6 +108,8 @@ export default function AuthScreen() {
 
   return (
     <Box flex={1} bg="gray.50" safeArea>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
       <Center flex={1} px={6}>
         <VStack space={6} w="100%" maxW="400px">
           {/* Header */}
@@ -133,6 +135,9 @@ export default function AuthScreen() {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
+                textContentType="emailAddress"
+                returnKeyType="next"
+                blurOnSubmit={false}
               />
               <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
                 {errors.email}
@@ -146,8 +151,8 @@ export default function AuthScreen() {
                 placeholder="Enter your password"
                 value={formData.password}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, password: text }))}
-                type="password"
                 secureTextEntry
+                textContentType="password"
               />
               <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
                 {errors.password}
@@ -162,8 +167,8 @@ export default function AuthScreen() {
                   placeholder="Confirm your password"
                   value={formData.confirmPassword}
                   onChangeText={(text) => setFormData(prev => ({ ...prev, confirmPassword: text }))}
-                  type="password"
                   secureTextEntry
+                  textContentType="password"
                 />
                 <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
                   {errors.confirmPassword}
@@ -257,7 +262,7 @@ export default function AuthScreen() {
             <Button
               onPress={handleSubmit}
               isLoading={isLoading}
-              loadingText={isLogin ? 'Signing in...' : 'Creating account...'}
+              isLoadingText={isLogin ? 'Signing in...' : 'Creating account...'}
               size="lg"
               colorScheme="primary"
             >
@@ -276,6 +281,8 @@ export default function AuthScreen() {
           </VStack>
         </VStack>
       </Center>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Box>
   );
 }

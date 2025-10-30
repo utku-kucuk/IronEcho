@@ -178,6 +178,9 @@ export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
   Onboarding: undefined;
+  WorkoutEntry: { workoutId?: string; presetPlan?: PresetExercise[]; date?: string; weekday?: string };
+  MeasurementEntry: { measurementId?: string };
+  WeeklyProgram?: undefined;
 };
 
 export type MainTabParamList = {
@@ -215,6 +218,20 @@ export type SettingsStackParamList = {
   LanguageSettings: undefined;
   DataExport: undefined;
 };
+
+// Weekly Program Types (for navigation payloads)
+export interface PresetProgramSet {
+  reps: number;
+  weight?: number;
+}
+
+export interface PresetExercise {
+  name: string;
+  muscleGroup: WorkoutExercise['muscleGroup'];
+  type: WorkoutExercise['type'];
+  weightBased: boolean;
+  defaultSets: PresetProgramSet[];
+}
 
 // API Response Types
 export interface ApiResponse<T> {

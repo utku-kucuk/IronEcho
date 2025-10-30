@@ -51,11 +51,11 @@ export default function MeasurementEntryScreen() {
         clientTimestamp: new Date()
       } as any);
 
-      toast.show({ title: 'Saved', description: 'Measurements saved locally', status: 'success' });
+      toast.show({ title: 'Saved', description: 'Measurements saved locally' });
       // @ts-ignore
       navigation.goBack();
     } catch (e: any) {
-      toast.show({ title: 'Error', description: e.message || 'Failed to save measurements', status: 'error' });
+      toast.show({ title: 'Error', description: e.message || 'Failed to save measurements' });
     }
   };
 

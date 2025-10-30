@@ -9,7 +9,6 @@ import {
   Icon,
   ScrollView,
   Button,
-  Icon,
   FlatList
 } from 'native-base';
 import { Ionicons } from '@expo/vector-icons';
@@ -66,12 +65,9 @@ export default function MeasurementsScreen() {
           </Center>
         </ScrollView>
       ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item) => item._id!}
-          contentContainerStyle={{ padding: 16 }}
-          renderItem={({ item }) => (
-            <Box bg="white" p={4} borderRadius="lg" shadow={1} mb={3}>
+        <ScrollView p={4}>
+          {items.map((item) => (
+            <Box key={item._id!} bg="white" p={4} borderRadius="lg" shadow={1} mb={3}>
               <HStack justifyContent="space-between">
                 <VStack>
                   <Text fontWeight="bold">{new Date(item.date).toDateString()}</Text>
@@ -79,8 +75,8 @@ export default function MeasurementsScreen() {
                 </VStack>
               </HStack>
             </Box>
-          )}
-        />
+          ))}
+        </ScrollView>
       )}
     </Box>
   );

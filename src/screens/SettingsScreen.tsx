@@ -26,13 +26,11 @@ export default function SettingsScreen() {
       toast.show({
         title: 'Logged out',
         description: 'You have been logged out successfully',
-        status: 'success'
       });
     } catch (error) {
       toast.show({
         title: 'Error',
         description: 'Failed to log out',
-        status: 'error'
       });
     }
   };
@@ -49,7 +47,6 @@ export default function SettingsScreen() {
       toast.show({
         title: 'Sync failed',
         description: 'Failed to sync data',
-        status: 'error'
       });
     }
   };
@@ -167,7 +164,7 @@ export default function SettingsScreen() {
                   colorScheme="primary"
                   onPress={handleSync}
                   isLoading={isSyncing}
-                  loadingText="Syncing..."
+                  isLoadingText="Syncing..."
                 >
                   Sync Now
                 </Button>

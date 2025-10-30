@@ -13,12 +13,26 @@ class RealmDatabase {
       this.realm = await Realm.open({
         schema: schemas,
         schemaVersion: SCHEMA_VERSION,
-        migration: (oldRealm, newRealm) => {
+        onMigration: (oldRealm: any, newRealm: any) => {
           // Handle migrations here if needed
           console.log('Realm migration running...');
-        },
-        onError: (error) => {
-          console.error('Realm error:', error);
+          try {
+            if (oldRealm.schemaVersion < 2) {
+              const oldStatuses = oldRealm.objects('SyncStatus');
+              const source = oldStatuses && oldStatuses.length > 0 ? oldStatuses[0] : undefined;
+              const payload = {
+                _id: 'sync_status',
+                isOnline: source?.isOnline ?? false,
+                isSyncing: source?.isSyncing ?? false,
+                lastSync: source?.lastSync ?? undefined,
+                pendingCount: source?.pendingCount ?? 0,
+                error: source?.error ?? undefined
+              };
+              newRealm.create('SyncStatus', payload, Realm.UpdateMode.Modified);
+            }
+          } catch (e) {
+            console.log('Migration error while seeding SyncStatus:', e);
+          }
         }
       });
 
@@ -294,7 +308,6 @@ class RealmDatabase {
 
   private realmToSyncStatus(realmStatus: any): SyncStatus {
     return {
-      _id: realmStatus._id,
       isOnline: realmStatus.isOnline,
       isSyncing: realmStatus.isSyncing,
       lastSync: realmStatus.lastSync,

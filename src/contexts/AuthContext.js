@@ -43,16 +43,27 @@ export const AuthProvider = ({ children }) => {
       }
 
       const data = await response.json();
-      console.log('Login successful, received data:', data);
-      
-      if (data.token) {
-        localStorage.setItem('token', data.token);
+      console.log('Login response body:', data);
+
+      // Support two possible response shapes depending on backend implementation:
+      // { token, user }  OR  { accessToken, refreshToken, user }
+      const token = data.token || data.accessToken;
+      const refreshToken = data.refreshToken || null;
+
+      if (token) {
+        // Keep legacy 'token' key for other parts of the app, but also store full tokens if available
+        localStorage.setItem('token', token);
+        if (refreshToken) {
+          localStorage.setItem('refreshToken', refreshToken);
+        }
         localStorage.setItem('user', JSON.stringify(data.user));
         setUser(data.user);
         setIsAuthenticated(true);
         return { success: true, user: data.user };
       } else {
-        throw new Error('No token received from server');
+        // If backend provided an error message, surface it
+        const serverMsg = data && (data.error || data.message || JSON.stringify(data));
+        throw new Error(serverMsg || 'No auth token received from server');
       }
       
     } catch (error) {

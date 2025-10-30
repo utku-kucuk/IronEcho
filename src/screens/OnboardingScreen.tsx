@@ -76,13 +76,11 @@ export default function OnboardingScreen() {
       toast.show({
         title: 'Welcome!',
         description: 'Your profile has been set up successfully',
-        status: 'success'
       });
     } catch (error) {
       toast.show({
         title: 'Error',
         description: 'Failed to complete setup',
-        status: 'error'
       });
     }
   };
@@ -111,7 +109,7 @@ export default function OnboardingScreen() {
       case 1:
         return (
           <VStack space={6} alignItems="center">
-            <Icon as={Ionicons} name={steps[currentStep].icon} size="4xl" color="primary.500" />
+            <Icon as={Ionicons} name={steps[currentStep].icon as any} size="4xl" color="primary.500" />
             <VStack space={2} alignItems="center">
               <Heading size="xl" textAlign="center">
                 {steps[currentStep].title}
@@ -185,7 +183,7 @@ export default function OnboardingScreen() {
       case 2:
         return (
           <VStack space={6} alignItems="center">
-            <Icon as={Ionicons} name={steps[currentStep].icon} size="4xl" color="primary.500" />
+            <Icon as={Ionicons} name={steps[currentStep].icon as any} size="4xl" color="primary.500" />
             <VStack space={2} alignItems="center">
               <Heading size="xl" textAlign="center">
                 {steps[currentStep].title}
@@ -259,7 +257,7 @@ export default function OnboardingScreen() {
       case 3:
         return (
           <VStack space={6} alignItems="center">
-            <Icon as={Ionicons} name={steps[currentStep].icon} size="4xl" color="primary.500" />
+            <Icon as={Ionicons} name={steps[currentStep].icon as any} size="4xl" color="primary.500" />
             <VStack space={2} alignItems="center">
               <Heading size="xl" textAlign="center">
                 {steps[currentStep].title}

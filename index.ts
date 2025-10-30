@@ -1,4 +1,5 @@
 import { registerRootComponent } from 'expo';
+import './src/polyfills/backHandler';
 
 import App from './App';
 

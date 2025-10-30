@@ -386,7 +386,6 @@ class SyncService {
     const pendingCount = unsyncedWorkouts.length + unsyncedMeasurements.length;
     
     const syncStatus: SyncStatus = {
-      _id: 'sync_status',
       isOnline: this.isOnline,
       isSyncing: this.isSyncing,
       lastSync: realmDB.getSyncStatus()?.lastSync,

@@ -29,6 +29,7 @@ import MeasurementsScreen from './src/screens/MeasurementsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import WorkoutEntryScreen from './src/screens/WorkoutEntryScreen';
 import MeasurementEntryScreen from './src/screens/MeasurementEntryScreen';
+import WeeklyProgramScreen from './src/screens/WeeklyProgramScreen';
 
 // Context
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -112,6 +113,7 @@ function RootNavigator() {
           <Stack.Screen name="Main" component={MainTabNavigator} />
           <Stack.Screen name="WorkoutEntry" component={WorkoutEntryScreen} />
           <Stack.Screen name="MeasurementEntry" component={MeasurementEntryScreen} />
+          <Stack.Screen name="WeeklyProgram" component={WeeklyProgramScreen} />
         </>
       )}
     </Stack.Navigator>

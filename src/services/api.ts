@@ -17,7 +17,7 @@ class ApiClient {
   private baseURL: string;
   private tokens: AuthTokens | null = null;
 
-  constructor(baseURL: string = 'http://localhost:3000/api') {
+  constructor(baseURL: string = (process.env.EXPO_PUBLIC_API_URL as string) || 'http://localhost:3000/api') {
     this.baseURL = baseURL;
     this.client = axios.create({
       baseURL,

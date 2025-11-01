@@ -30,6 +30,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import WorkoutEntryScreen from './src/screens/WorkoutEntryScreen';
 import MeasurementEntryScreen from './src/screens/MeasurementEntryScreen';
 import WeeklyProgramScreen from './src/screens/WeeklyProgramScreen';
+import WorkoutDetailScreen from './src/screens/WorkoutDetailScreen';
 
 // Context
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -114,6 +115,7 @@ function RootNavigator() {
           <Stack.Screen name="WorkoutEntry" component={WorkoutEntryScreen} />
           <Stack.Screen name="MeasurementEntry" component={MeasurementEntryScreen} />
           <Stack.Screen name="WeeklyProgram" component={WeeklyProgramScreen} />
+          <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} />
         </>
       )}
     </Stack.Navigator>

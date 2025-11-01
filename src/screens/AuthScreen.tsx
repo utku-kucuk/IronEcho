@@ -109,7 +109,11 @@ export default function AuthScreen() {
   return (
     <Box flex={1} bg="gray.50" safeArea>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'none' : 'on-drag'}
+        >
       <Center flex={1} px={6}>
         <VStack space={6} w="100%" maxW="400px">
           {/* Header */}

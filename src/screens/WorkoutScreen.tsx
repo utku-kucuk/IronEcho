@@ -5,8 +5,6 @@ import {
   HStack,
   Text,
   Button,
-  FlatList,
-  ScrollView,
   useToast,
   Center,
   Heading,
@@ -14,13 +12,16 @@ import {
   Pressable,
   Badge,
   Spinner,
-  Select,
-  CheckIcon,
-  useBreakpointValue
+  Radio,
+  Actionsheet,
+  useDisclose,
+  useBreakpointValue,
+  Input
 } from 'native-base';
+import { FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 import { realmDB } from '../database/realm';
@@ -33,11 +34,14 @@ export default function WorkoutScreen() {
   const [selectedDay, setSelectedDay] = useState<Weekday>(() => getTodayKey());
   const [todayPlan, setTodayPlan] = useState<any[]>([]);
   const [targets, setTargets] = useState<Record<number, number | null>>({});
+  const [sessionWeights, setSessionWeights] = useState<Record<number, string>>({});
   const [level, setLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('intermediate');
-  const isNarrow = useBreakpointValue({ base: true, md: false });
   const [isOffDay, setIsOffDay] = useState<boolean>(false);
   const [loadFromDay, setLoadFromDay] = useState<Weekday | ''>('');
   const [loadedFromDayTemp, setLoadedFromDayTemp] = useState<Weekday | null>(null);
+  const dayPicker = useDisclose();
+  const loadDayPicker = useDisclose();
+  const isNarrow = useBreakpointValue({ base: true, md: false });
   
   const { user } = useAuth();
   const { isOnline, pendingCount } = useSync();
@@ -48,21 +52,31 @@ export default function WorkoutScreen() {
     loadWorkouts();
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      if (!user) return;
-      const program = await getWeeklyProgram(user._id);
-      const day: any = program ? (program[selectedDay] || { off: false, exercises: [] }) : { off: false, exercises: [] };
-      setTodayPlan(day.exercises || []);
-      setIsOffDay(!!day.off);
-      setLoadFromDay('');
-      setLoadedFromDayTemp(null);
-      try {
-        const saved = await AsyncStorage.getItem(`progression_level_${user._id}_${selectedDay}`);
-        if (saved === 'beginner' || saved === 'intermediate' || saved === 'advanced') setLevel(saved);
-      } catch {}
-    })();
+  const refreshProgramForDay = React.useCallback(async () => {
+    if (!user) return;
+    const program = await getWeeklyProgram(user._id);
+    const day: any = program ? (program[selectedDay] || { off: false, exercises: [] }) : { off: false, exercises: [] };
+    // If off day, don't show exercises in Today's Plan by default
+    setTodayPlan(day.off ? [] : (day.exercises || []));
+    setIsOffDay(!!day.off);
+    setLoadFromDay('');
+    setLoadedFromDayTemp(null);
+    try {
+      const saved = await AsyncStorage.getItem(`progression_level_${user._id}_${selectedDay}`);
+      if (saved === 'beginner' || saved === 'intermediate' || saved === 'advanced') setLevel(saved);
+    } catch {}
   }, [selectedDay, user]);
+
+  useEffect(() => {
+    refreshProgramForDay();
+  }, [refreshProgramForDay]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshProgramForDay();
+      loadWorkouts();
+    }, [refreshProgramForDay])
+  );
 
   useEffect(() => {
     if (!user) return;
@@ -108,6 +122,41 @@ export default function WorkoutScreen() {
     setTargets(nextTargets);
   }, [todayPlan, selectedDay, user, level]);
 
+  const saveTodayAsWorkout = () => {
+    try {
+      if (!user) throw new Error('Not authenticated');
+      const exercises = todayPlan
+        .filter((ex: any) => ex.name)
+        .map((ex: any, idx: number) => {
+          const setsCount = ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0);
+          const repsCount = ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0);
+          const weightVal = parseFloat(sessionWeights[idx] || '0') || 0;
+          return {
+            name: ex.name,
+            muscleGroup: ex.muscleGroup || 'other',
+            type: ex.type || 'strength',
+            weightBased: ex.weightBased !== false,
+            sets: Array.from({ length: Math.max(setsCount, 0) }).map(() => ({ reps: repsCount, weight: weightVal }))
+          };
+        });
+      const totalVolume = exercises.reduce((t: number, e: any) => t + e.sets.reduce((et: number, s: any) => et + (s.weight || 0) * s.reps, 0), 0);
+      realmDB.createWorkout({
+        userId: user._id,
+        date: new Date(),
+        exercises,
+        totalVolume,
+        isPR: false,
+        lastModified: new Date(),
+        clientTimestamp: new Date()
+      } as any);
+      toast.show({ title: 'Saved', description: 'Workout saved locally' });
+      // refresh recent list
+      loadWorkouts();
+    } catch (e: any) {
+      toast.show({ title: 'Error', description: e?.message || 'Failed to save workout' });
+    }
+  };
+
   const loadWorkouts = async () => {
     try {
       setIsLoading(true);
@@ -143,7 +192,7 @@ export default function WorkoutScreen() {
   };
 
   const renderWorkoutItem = ({ item }: { item: Workout }) => (
-    <Pressable onPress={() => {/* Navigate to workout detail */}}>
+    <Pressable onPress={() => {(navigation as any).navigate('WorkoutDetail' as never, { id: item._id } as never)}}>
       <Box
         bg="white"
         p={4}
@@ -207,14 +256,21 @@ export default function WorkoutScreen() {
       <HStack space={2} alignItems="center" justifyContent="space-between">
         <HStack space={2} alignItems="center">
           <Text>Form:</Text>
-          <Select selectedValue={level} minW={36} _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} /> }} onValueChange={async (v) => {
-            setLevel(v as any);
-            try { if (user) await AsyncStorage.setItem(`progression_level_${user._id}_${selectedDay}`, v); } catch {}
-          }}>
-            <Select.Item label="Yeni başlayan" value="beginner" />
-            <Select.Item label="Orta seviye" value="intermediate" />
-            <Select.Item label="İleri seviye" value="advanced" />
-          </Select>
+          <Radio.Group
+            name="progressionLevel"
+            accessibilityLabel="Progression level"
+            value={level}
+            onChange={async (v) => {
+              setLevel(v as any);
+              try { if (user) await AsyncStorage.setItem(`progression_level_${user._id}_${selectedDay}`, v as string); } catch {}
+            }}
+          >
+            <HStack space={4}>
+              <Radio value="beginner">Yeni başlayan</Radio>
+              <Radio value="intermediate">Orta seviye</Radio>
+              <Radio value="advanced">İleri seviye</Radio>
+            </HStack>
+          </Radio.Group>
         </HStack>
         {/* Removed duplicate Program button */}
       </HStack>
@@ -223,11 +279,18 @@ export default function WorkoutScreen() {
         <VStack space={2}>
           <Text color="gray.600">Off day. Başka günden yükle:</Text>
           <HStack space={2} alignItems="center">
-            <Select flex={1} selectedValue={loadFromDay || ''} placeholder="Select day" _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} /> }} onValueChange={(v) => setLoadFromDay(v as Weekday)}>
-              {(['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] as Weekday[]).map((d) => (
-                <Select.Item key={d} label={d.charAt(0).toUpperCase() + d.slice(1)} value={d} />
-              ))}
-            </Select>
+            <Button size="sm" variant="outline" onPress={loadDayPicker.onOpen}>
+              {loadFromDay ? `From: ${loadFromDay}` : 'Select day'}
+            </Button>
+            <Actionsheet isOpen={loadDayPicker.isOpen} onClose={loadDayPicker.onClose}>
+              <Actionsheet.Content>
+                {(['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] as Weekday[]).map((d) => (
+                  <Button key={d} variant={loadFromDay===d?'solid':'ghost'} w="100%" onPress={() => { setLoadFromDay(d); loadDayPicker.onClose(); }}>
+                    {d.charAt(0).toUpperCase() + d.slice(1)}
+                  </Button>
+                ))}
+              </Actionsheet.Content>
+            </Actionsheet>
             <Button isDisabled={!loadFromDay} onPress={async () => {
               if (!user || !loadFromDay) return;
               const program = await getWeeklyProgram(user._id);
@@ -244,13 +307,27 @@ export default function WorkoutScreen() {
       {todayPlan && todayPlan.length > 0 ? (
         <VStack space={2}>
           {todayPlan.map((ex: any, idx: number) => (
-            <HStack key={`${ex.name}-${idx}`} justifyContent="space-between" alignItems="center">
-              <VStack flex={1}>
-                <Text fontWeight="semibold">{ex.name || 'Exercise'}</Text>
-                <Text fontSize="xs" color="gray.500">{(ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0))} x {(ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0))}</Text>
-              </VStack>
-              <Text fontSize="sm" color="primary.600">Target weight (Hedef kilo): {targets[idx] != null ? `${targets[idx]} kg` : '-'}</Text>
-            </HStack>
+            <VStack key={`${ex.name}-${idx}`} space={1}>
+              <HStack justifyContent="space-between" alignItems="center">
+                <VStack flex={1}>
+                  <Text fontWeight="semibold">{ex.name || 'Exercise'}</Text>
+                  <Text fontSize="xs" color="gray.500">{(ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0))} x {(ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0))}</Text>
+                </VStack>
+                <Text fontSize="sm" color="primary.600">Öneri: {targets[idx] != null ? `${targets[idx]} kg` : '-'}</Text>
+              </HStack>
+              {ex.weightBased !== false && (
+                <HStack alignItems="center" space={2}>
+                  <Text fontSize="xs" color="gray.600">Kilo:</Text>
+                  <Input
+                    flex={1}
+                    keyboardType="decimal-pad"
+                    placeholder={targets[idx] != null ? String(targets[idx]) : '0'}
+                    value={sessionWeights[idx] ?? ''}
+                    onChangeText={(t) => setSessionWeights((prev) => ({ ...prev, [idx]: t }))}
+                  />
+                </HStack>
+              )}
+            </VStack>
           ))}
         </VStack>
       ) : (
@@ -296,10 +373,10 @@ export default function WorkoutScreen() {
   return (
     <Box flex={1} bg="gray.50" safeArea>
       {/* Header */}
-      <Box bg="white" px={6} py={4} borderBottomWidth={1} borderBottomColor="gray.200">
+      <Box bg="white" px={4} py={3} borderBottomWidth={1} borderBottomColor="gray.200">
         <HStack justifyContent="space-between" alignItems="center">
           <VStack>
-            <Heading size="lg" color="gray.800">
+            <Heading size={isNarrow ? 'md' : 'lg'} color="gray.800">
               Workouts
             </Heading>
             <HStack space={2} alignItems="center">
@@ -313,18 +390,27 @@ export default function WorkoutScreen() {
               )}
               {pendingCount > 0 && (
                 <Badge colorScheme="blue" variant="subtle" size="sm">
-                  {pendingCount} pending
+                  {pendingCount} unsynced
                 </Badge>
               )}
             </HStack>
           </VStack>
           <HStack space={2} alignItems="center">
             {isNarrow ? (
-              <Select selectedValue={selectedDay} minW={40} _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} /> }} onValueChange={(v) => setSelectedDay(v as Weekday)}>
-                {(['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] as Weekday[]).map((d) => (
-                  <Select.Item key={d} label={d.charAt(0).toUpperCase() + d.slice(1)} value={d} />
-                ))}
-              </Select>
+              <>
+                <Button size="sm" onPress={dayPicker.onOpen} variant="outline">
+                  Day: {selectedDay.slice(0,3).toUpperCase()}
+                </Button>
+                <Actionsheet isOpen={dayPicker.isOpen} onClose={dayPicker.onClose}>
+                  <Actionsheet.Content>
+                    {(['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] as Weekday[]).map((d) => (
+                      <Button key={d} variant={selectedDay===d?'solid':'ghost'} w="100%" onPress={() => { setSelectedDay(d); dayPicker.onClose(); }}>
+                        {d.charAt(0).toUpperCase() + d.slice(1)}
+                      </Button>
+                    ))}
+                  </Actionsheet.Content>
+                </Actionsheet>
+              </>
             ) : (
               <HStack space={1}>
                 {(['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] as Weekday[]).map((d) => (
@@ -332,25 +418,35 @@ export default function WorkoutScreen() {
                 ))}
               </HStack>
             )}
-            <Button size="sm" variant="outline" onPress={() => (navigation as any).navigate('WeeklyProgram' as never)} leftIcon={<Icon as={Ionicons} name="create-outline" />}>Weekly Program</Button>
+            {isNarrow ? (
+              <Button size="sm" variant="ghost" onPress={() => (navigation as any).navigate('WeeklyProgram' as never)} leftIcon={<Icon as={Ionicons} name="create-outline" />}>Program</Button>
+            ) : (
+              <Button size="sm" variant="outline" onPress={() => (navigation as any).navigate('WeeklyProgram' as never)} leftIcon={<Icon as={Ionicons} name="create-outline" />}>Weekly Program</Button>
+            )}
           </HStack>
         </HStack>
       </Box>
 
-      <ScrollView p={4}>
-        {renderTodayPlan()}
-        {workouts.length === 0 ? (
-          renderEmptyState()
-        ) : (
+      <FlatList
+        style={{ flex: 1 }}
+        data={workouts}
+        keyExtractor={(item: any) => String(item._id)}
+        renderItem={renderWorkoutItem}
+        ListHeaderComponent={() => (
           <VStack>
-            {workouts.map((item) => (
-              <Box key={item._id}>
-                {renderWorkoutItem({ item })}
-              </Box>
-            ))}
+            {renderTodayPlan()}
+            {/* Save button for today's session */}
+            {todayPlan && todayPlan.length > 0 && (
+              <Button mt={2} colorScheme="primary" onPress={saveTodayAsWorkout} leftIcon={<Icon as={Ionicons} name="save" />}>Save Day</Button>
+            )}
           </VStack>
         )}
-      </ScrollView>
+        ListEmptyComponent={renderEmptyState}
+        contentContainerStyle={{ padding: 16, paddingTop: 16 }}
+        keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior="always"
+        showsVerticalScrollIndicator
+      />
     </Box>
   );
 }

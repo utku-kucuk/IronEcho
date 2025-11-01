@@ -20,7 +20,7 @@ export default function WorkoutDetailScreen() {
     if (w) setWorkout(w);
   }, [route.params]);
 
-  const formatDate = (date: Date) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+  const formatDate = (date: Date) => new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 
   const onEdit = () => {
     if (!workout) return;

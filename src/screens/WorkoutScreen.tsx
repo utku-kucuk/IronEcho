@@ -16,9 +16,11 @@ import {
   Actionsheet,
   useDisclose,
   useBreakpointValue,
-  Input
+  Input,
+  Select,
+  CheckIcon
 } from 'native-base';
-import { FlatList } from 'react-native';
+import { FlatList, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -26,7 +28,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 import { realmDB } from '../database/realm';
 import { Workout } from '../types';
-import { getTodayKey, getWeeklyProgram, Weekday } from '../services/weeklyProgram';
+import { getTodayKey, getWeeklyProgram, Weekday, getDailyOverride } from '../services/weeklyProgram';
 
 export default function WorkoutScreen() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -47,6 +49,7 @@ export default function WorkoutScreen() {
   const { isOnline, pendingCount } = useSync();
   const navigation = useNavigation();
   const toast = useToast();
+  const isWeb = Platform.OS === 'web';
 
   useEffect(() => {
     loadWorkouts();
@@ -56,9 +59,25 @@ export default function WorkoutScreen() {
     if (!user) return;
     const program = await getWeeklyProgram(user._id);
     const day: any = program ? (program[selectedDay] || { off: false, exercises: [] }) : { off: false, exercises: [] };
-    // If off day, don't show exercises in Today's Plan by default
-    setTodayPlan(day.off ? [] : (day.exercises || []));
-    setIsOffDay(!!day.off);
+    // Check one-off override for the specific calendar day
+    const dateISO = (() => {
+      const map = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+      const todayIdx = new Date().getDay();
+      const targetIdx = map.indexOf(selectedDay);
+      const diff = targetIdx - todayIdx;
+      const d = new Date();
+      d.setDate(d.getDate() + diff);
+      return d.toISOString().slice(0,10);
+    })();
+    const override = await getDailyOverride(user._id, dateISO);
+    if (override && override.length > 0) {
+      setTodayPlan(override);
+      setIsOffDay(false);
+    } else {
+      // If off day, don't show exercises in Today's Plan by default
+      setTodayPlan(day.off ? [] : (day.exercises || []));
+      setIsOffDay(!!day.off);
+    }
     setLoadFromDay('');
     setLoadedFromDayTemp(null);
     try {
@@ -177,6 +196,7 @@ export default function WorkoutScreen() {
 
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat('en-US', {
+      weekday: 'short',
       month: 'short',
       day: 'numeric',
       year: 'numeric'
@@ -251,26 +271,46 @@ export default function WorkoutScreen() {
           <Icon as={Ionicons} name="calendar" />
           <Text fontWeight="bold">Today's Plan</Text>
         </HStack>
-        <Button size="sm" colorScheme="primary" variant="subtle" onPress={() => (navigation as any).navigate('WorkoutEntry' as never, { presetPlan: todayPlan, weekday: selectedDay, level } as never)} leftIcon={<Icon as={Ionicons} name="create-outline" />}>Edit</Button>
+        <Button size="sm" colorScheme="primary" variant="subtle" onPress={() => {
+          const map = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+          const todayIdx = new Date().getDay();
+          const targetIdx = map.indexOf(selectedDay);
+          const diff = targetIdx - todayIdx;
+          const d = new Date();
+          d.setDate(d.getDate() + diff);
+          const dateISO = d.toISOString().slice(0,10);
+          (navigation as any).navigate('WorkoutEntry' as never, { presetPlan: todayPlan, weekday: selectedDay, level, dateISO } as never);
+        }} leftIcon={<Icon as={Ionicons} name="create-outline" />}>Edit</Button>
       </HStack>
       <HStack space={2} alignItems="center" justifyContent="space-between">
         <HStack space={2} alignItems="center">
           <Text>Form:</Text>
-          <Radio.Group
-            name="progressionLevel"
-            accessibilityLabel="Progression level"
-            value={level}
-            onChange={async (v) => {
+          {isWeb ? (
+            <Select selectedValue={level} minW={36} _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }} onValueChange={async (v) => {
               setLevel(v as any);
-              try { if (user) await AsyncStorage.setItem(`progression_level_${user._id}_${selectedDay}`, v as string); } catch {}
-            }}
-          >
-            <HStack space={4}>
-              <Radio value="beginner">Yeni başlayan</Radio>
-              <Radio value="intermediate">Orta seviye</Radio>
-              <Radio value="advanced">İleri seviye</Radio>
-            </HStack>
-          </Radio.Group>
+              try { if (user) await AsyncStorage.setItem(`progression_level_${user._id}_${selectedDay}`, v); } catch {}
+            }}>
+              <Select.Item label="Yeni başlayan" value="beginner" />
+              <Select.Item label="Orta seviye" value="intermediate" />
+              <Select.Item label="İleri seviye" value="advanced" />
+            </Select>
+          ) : (
+            <Radio.Group
+              name="progressionLevel"
+              accessibilityLabel="Progression level"
+              value={level}
+              onChange={async (v) => {
+                setLevel(v as any);
+                try { if (user) await AsyncStorage.setItem(`progression_level_${user._id}_${selectedDay}`, v as string); } catch {}
+              }}
+            >
+              <HStack space={4}>
+                <Radio value="beginner">Yeni başlayan</Radio>
+                <Radio value="intermediate">Orta seviye</Radio>
+                <Radio value="advanced">İleri seviye</Radio>
+              </HStack>
+            </Radio.Group>
+          )}
         </HStack>
         {/* Removed duplicate Program button */}
       </HStack>

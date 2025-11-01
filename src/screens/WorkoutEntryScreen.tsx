@@ -19,8 +19,9 @@ import { FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { realmDB } from '../database/realm';
+import { saveDailyOverride, getTodaysProgram, DEFAULT_WEEKLY_PROGRAM, ProgramExerciseTemplate } from '../services/weeklyProgram';
+import { getCatalog, addExerciseName, addMuscleGroup, addExerciseType } from '../services/exerciseCatalog';
 import { useAuth } from '../context/AuthContext';
-import { getTodaysProgram, DEFAULT_WEEKLY_PROGRAM, ProgramExerciseTemplate } from '../services/weeklyProgram';
 import { PresetExercise } from '../types';
 
 type ExerciseSetForm = { reps: string; weight: string };
@@ -30,6 +31,8 @@ type ExerciseForm = {
   type: 'strength' | 'bodyweight' | 'cardio';
   weightBased: boolean;
   sets: ExerciseSetForm[];
+  setsCount?: number; // schema mode
+  repsCount?: string; // schema mode
 };
 
 export default function WorkoutEntryScreen() {
@@ -55,14 +58,22 @@ export default function WorkoutEntryScreen() {
 
   // Exercise options and modal state for adding custom exercise names
   const [exerciseOptions, setExerciseOptions] = useState<string[]>([
-    'Bench Press', 'Squat', 'Deadlift', 'Overhead Press', 'Barbell Row',
-    'Pull Up', 'Push Up', 'Dumbbell Curl', 'Tricep Dip', 'Leg Press',
-    'Lunge', 'Lat Pulldown', 'Chest Fly', 'Leg Extension', 'Leg Curl',
-    'Plank', 'Running', 'Cycling', 'Rowing'
+    'Bench Press'
+  ]);
+  const [muscleGroups, setMuscleGroups] = useState<string[]>(['chest','back','shoulders','arms','legs','core','cardio','other']);
+  const [exerciseTypes, setExerciseTypes] = useState<{ name: string; weightBased: boolean }[]>([
+    { name: 'strength', weightBased: true },
+    { name: 'bodyweight', weightBased: false },
+    { name: 'cardio', weightBased: false }
   ]);
   const [isAddExerciseOpen, setIsAddExerciseOpen] = useState<boolean>(false);
   const [newExerciseName, setNewExerciseName] = useState<string>('');
   const [targetExerciseIndex, setTargetExerciseIndex] = useState<number | null>(null);
+  const [isAddGroupOpen, setIsAddGroupOpen] = useState<boolean>(false);
+  const [newGroupName, setNewGroupName] = useState<string>('');
+  const [isAddTypeOpen, setIsAddTypeOpen] = useState<boolean>(false);
+  const [newTypeName, setNewTypeName] = useState<string>('');
+  const [newTypeWeightBased, setNewTypeWeightBased] = useState<boolean>(true);
 
   const addExercise = () => {
     setExercises(prev => [...prev, { name: '', muscleGroup: 'other', type: 'strength', weightBased: true, sets: [{ reps: '', weight: '' }] }]);
@@ -101,6 +112,8 @@ export default function WorkoutEntryScreen() {
     if (!exerciseOptions.some(e => e.toLowerCase() === name.toLowerCase())) {
       setExerciseOptions(prev => [...prev, name]);
     }
+    // persist to catalog
+    if (user) { addExerciseName(user._id, name).catch(() => {}); }
     // Set selected exercise name for targeted card
     setExercises(prev => prev.map((ex, i) => i === targetExerciseIndex ? { ...ex, name } : ex));
     setIsAddExerciseOpen(false);
@@ -126,6 +139,11 @@ export default function WorkoutEntryScreen() {
     (async () => {
       try {
         if (!user) return;
+        // Load dynamic catalogs
+        const cat = await getCatalog(user._id);
+        setExerciseOptions(cat.exercises);
+        setMuscleGroups(cat.muscleGroups);
+        setExerciseTypes(cat.types);
         const editId: string | undefined = route.params?.editWorkoutId;
         if (editId) {
           const existing = realmDB.getWorkoutById(editId);
@@ -270,6 +288,28 @@ export default function WorkoutEntryScreen() {
     }
   };
 
+  const editWorkoutId = route.params?.editWorkoutId as string | undefined;
+
+  const saveSchemaOverride = async () => {
+    try {
+      if (!user) throw new Error('Not authenticated');
+      const dateISO: string = route.params?.dateISO || new Date().toISOString().slice(0,10);
+      const plan: ProgramExerciseTemplate[] = exercises.map((e) => ({
+        name: e.name,
+        muscleGroup: e.muscleGroup as any,
+        type: e.type,
+        weightBased: e.weightBased,
+        setsCount: e.setsCount ?? e.sets.length,
+        repsCount: e.repsCount ? parseInt(e.repsCount, 10) : (e.sets[0]?.reps ? parseInt(e.sets[0].reps, 10) : 0)
+      }));
+      await saveDailyOverride(user._id, dateISO, plan);
+      // @ts-ignore
+      (navigation as any).goBack();
+    } catch (e: any) {
+      toast.show({ title: 'Error', description: e?.message || 'Failed to save plan' });
+    }
+  };
+
   return (
     <Box flex={1} bg="gray.50" safeArea>
       <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg="white" borderBottomWidth={1} borderBottomColor="gray.200">
@@ -277,7 +317,7 @@ export default function WorkoutEntryScreen() {
           <Button variant="ghost" onPress={() => (navigation as any).goBack()} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
           <Text fontSize="lg" fontWeight="bold">New Workout</Text>
         </HStack>
-        <Button colorScheme="primary" onPress={saveWorkout} leftIcon={<Icon as={Ionicons} name="save" />}>Save</Button>
+        <Button colorScheme="primary" onPress={editWorkoutId ? saveWorkout : saveSchemaOverride} leftIcon={<Icon as={Ionicons} name="save" />}>Save</Button>
       </HStack>
 
       <FlatList
@@ -380,24 +420,40 @@ export default function WorkoutEntryScreen() {
                   _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
                   onValueChange={value => updateExercise(idx, 'muscleGroup', value)}
                 >
-                  {['chest','back','shoulders','arms','legs','core','cardio','other'].map(g => (
+                  {muscleGroups.map(g => (
                     <Select.Item key={`${g}-${idx}`} label={g} value={g} />
                   ))}
                 </Select>
               </FormControl>
+              <IconButton
+                variant="outline"
+                onPress={() => { setNewGroupName(''); setIsAddGroupOpen(true); }}
+                icon={<Icon as={Ionicons} name="add-circle-outline" />}
+                accessibilityLabel="Add muscle group"
+              />
               <FormControl flex={1}>
                 <FormControl.Label>Type</FormControl.Label>
                 <Select
                   selectedValue={ex.type}
                   placeholder="Select type"
                   _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
-                  onValueChange={value => updateExercise(idx, 'type', value)}
+                  onValueChange={value => {
+                    const t = exerciseTypes.find(t => t.name === value);
+                    updateExercise(idx, 'type', value);
+                    if (t) updateExercise(idx, 'weightBased', t.weightBased as any);
+                  }}
                 >
-                  {['strength','bodyweight','cardio'].map(t => (
-                    <Select.Item key={`${t}-${idx}`} label={t} value={t} />
+                  {exerciseTypes.map(t => (
+                    <Select.Item key={`${t.name}-${idx}`} label={t.name} value={t.name} />
                   ))}
                 </Select>
               </FormControl>
+              <IconButton
+                variant="outline"
+                onPress={() => { setNewTypeName(''); setNewTypeWeightBased(true); setIsAddTypeOpen(true); }}
+                icon={<Icon as={Ionicons} name="add-circle-outline" />}
+                accessibilityLabel="Add exercise type"
+              />
             </HStack>
             <HStack space={2} alignItems="flex-end">
               <FormControl flex={1}>
@@ -412,44 +468,58 @@ export default function WorkoutEntryScreen() {
                   <Select.Item label="No" value="no" />
                 </Select>
               </FormControl>
-              <Button variant="outline" onPress={() => addSet(idx)} leftIcon={<Icon as={Ionicons} name="add" />}>Add Set</Button>
             </HStack>
             <Divider />
-            <VStack space={2}>
-              {ex.sets.map((s, si) => (
-                <VStack key={si} space={2}>
-                  <HStack space={2}>
-                    <FormControl flex={1}>
-                      <FormControl.Label>Reps</FormControl.Label>
-                      <Select
-                        selectedValue={s.reps}
-                        placeholder="Reps"
-                        _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
-                        onValueChange={value => updateSet(idx, si, 'reps', value)}
-                      >
-                        {repOptions.map(r => (
-                          <Select.Item key={`rep-${idx}-${si}-${r}`} label={r} value={r} />
-                        ))}
-                      </Select>
-                    </FormControl>
-                    {ex.weightBased && (
+            {/* Schema mode (no weights): sets & reps numeric */}
+            {!editWorkoutId ? (
+              <HStack space={2}>
+                <FormControl flex={1}>
+                  <FormControl.Label>Sets</FormControl.Label>
+                  <Input keyboardType="number-pad" value={String(ex.setsCount ?? ex.sets.length)} onChangeText={t => {
+                    const val = parseInt(t.replace(/[^0-9]/g, ''), 10) || 0;
+                    updateExercise(idx, 'setsCount' as any, val as any);
+                  }} />
+                </FormControl>
+                <FormControl flex={1}>
+                  <FormControl.Label>Reps</FormControl.Label>
+                  <Input keyboardType="number-pad" value={String(ex.repsCount ?? (ex.sets[0]?.reps || ''))} onChangeText={t => updateExercise(idx, 'repsCount' as any, t as any)} />
+                </FormControl>
+              </HStack>
+            ) : (
+              <VStack space={2}>
+                {ex.sets.map((s, si) => (
+                  <VStack key={si} space={2}>
+                    <HStack space={2}>
                       <FormControl flex={1}>
-                        <FormControl.Label>Weight</FormControl.Label>
-                        <Input
-                          keyboardType="decimal-pad"
-                          placeholder="Weight"
-                          value={s.weight}
-                          onChangeText={t => updateSet(idx, si, 'weight', sanitizeDecimal(t))}
-                        />
-                        {si === 0 && (
-                          <Text fontSize="xs" color="gray.500" mt={1}>Öneri: {targets[idx] != null ? `${targets[idx]} kg` : '-'}</Text>
-                        )}
+                        <FormControl.Label>Reps</FormControl.Label>
+                        <Select
+                          selectedValue={s.reps}
+                          placeholder="Reps"
+                          _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                          onValueChange={value => updateSet(idx, si, 'reps', value)}
+                        >
+                          {repOptions.map(r => (
+                            <Select.Item key={`rep-${idx}-${si}-${r}`} label={r} value={r} />
+                          ))}
+                        </Select>
                       </FormControl>
-                    )}
-                  </HStack>
-                </VStack>
-              ))}
-            </VStack>
+                      {ex.weightBased && (
+                        <FormControl flex={1}>
+                          <FormControl.Label>Weight</FormControl.Label>
+                          <Input
+                            keyboardType="decimal-pad"
+                            placeholder="Weight"
+                            value={s.weight}
+                            onChangeText={t => updateSet(idx, si, 'weight', sanitizeDecimal(t))}
+                          />
+                        </FormControl>
+                      )}
+                    </HStack>
+                  </VStack>
+                ))}
+                <Button variant="outline" onPress={() => addSet(idx)} leftIcon={<Icon as={Ionicons} name="add" />}>Add Set</Button>
+              </VStack>
+            )}
           </VStack>
         )}
         ListFooterComponent={(
@@ -473,6 +543,47 @@ export default function WorkoutEntryScreen() {
           </Modal.Body>
           <Modal.Footer>
             <Button onPress={handleAddCustomExercise} isDisabled={!newExerciseName.trim()}>Add</Button>
+          </Modal.Footer>
+        </Modal.Content>
+      </Modal>
+
+      <Modal isOpen={isAddGroupOpen} onClose={() => setIsAddGroupOpen(false)}>
+        <Modal.Content>
+          <Modal.CloseButton />
+          <Modal.Header>Add Muscle Group</Modal.Header>
+          <Modal.Body>
+            <FormControl>
+              <FormControl.Label>Group Name</FormControl.Label>
+              <Input value={newGroupName} onChangeText={setNewGroupName} placeholder="e.g., glutes" />
+            </FormControl>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button onPress={async () => { const n = newGroupName.trim(); if (!n) return; setMuscleGroups(prev => [n, ...prev.filter(p => p.toLowerCase() !== n.toLowerCase())]); if (user) await addMuscleGroup(user._id, n); setIsAddGroupOpen(false); }}>Add</Button>
+          </Modal.Footer>
+        </Modal.Content>
+      </Modal>
+
+      <Modal isOpen={isAddTypeOpen} onClose={() => setIsAddTypeOpen(false)}>
+        <Modal.Content>
+          <Modal.CloseButton />
+          <Modal.Header>Add Exercise Type</Modal.Header>
+          <Modal.Body>
+            <VStack space={2}>
+              <FormControl>
+                <FormControl.Label>Type Name</FormControl.Label>
+                <Input value={newTypeName} onChangeText={setNewTypeName} placeholder="e.g., olympic" />
+              </FormControl>
+              <FormControl>
+                <FormControl.Label>Weight-based?</FormControl.Label>
+                <Select selectedValue={newTypeWeightBased ? 'yes' : 'no'} onValueChange={v => setNewTypeWeightBased(v === 'yes')} _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}>
+                  <Select.Item label="Yes" value="yes" />
+                  <Select.Item label="No" value="no" />
+                </Select>
+              </FormControl>
+            </VStack>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button onPress={async () => { const n = newTypeName.trim(); if (!n) return; const def = { name: n, weightBased: newTypeWeightBased }; setExerciseTypes(prev => [def, ...prev.filter(p => p.name.toLowerCase() !== n.toLowerCase())]); if (user) await addExerciseType(user._id, def); setIsAddTypeOpen(false); }}>Add</Button>
           </Modal.Footer>
         </Modal.Content>
       </Modal>

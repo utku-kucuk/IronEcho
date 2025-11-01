@@ -262,12 +262,20 @@ class RealmDatabase {
   }
 
   private realmToWorkout(realmWorkout: any): Workout {
+    const clonedExercises = Array.from(realmWorkout.exercises || []).map((ex: any) => ({
+      name: ex.name,
+      muscleGroup: ex.muscleGroup,
+      equipment: ex.equipment,
+      type: ex.type,
+      weightBased: ex.weightBased,
+      sets: Array.from(ex.sets || []).map((s: any) => ({ reps: s.reps, weight: s.weight }))
+    }));
     return {
       _id: realmWorkout._id,
       userId: realmWorkout.userId,
       date: realmWorkout.date,
       warmup: realmWorkout.warmup,
-      exercises: realmWorkout.exercises,
+      exercises: clonedExercises,
       notes: realmWorkout.notes,
       totalVolume: realmWorkout.totalVolume,
       isPR: realmWorkout.isPR,

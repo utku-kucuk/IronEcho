@@ -51,6 +51,27 @@ export async function getTodaysProgram(userId: string, date = new Date()): Promi
   return program[key]?.exercises || [];
 }
 
+// One-off per-date override for a day's plan
+const OVERRIDE_KEY = (userId: string, dateISO: string) => `daily_override_${userId}_${dateISO}`;
+
+export async function saveDailyOverride(userId: string, dateISO: string, exercises: ProgramExerciseTemplate[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(OVERRIDE_KEY(userId, dateISO), JSON.stringify(exercises));
+  } catch (e) {
+    console.error('Failed to save daily override', e);
+  }
+}
+
+export async function getDailyOverride(userId: string, dateISO: string): Promise<ProgramExerciseTemplate[] | null> {
+  try {
+    const raw = await AsyncStorage.getItem(OVERRIDE_KEY(userId, dateISO));
+    return raw ? (JSON.parse(raw) as ProgramExerciseTemplate[]) : null;
+  } catch (e) {
+    console.error('Failed to get daily override', e);
+    return null;
+  }
+}
+
 // Optional: a minimal default to help first-run UX
 export const DEFAULT_WEEKLY_PROGRAM: WeeklyProgram = {
   monday: { off: false, exercises: [

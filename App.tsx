@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NativeBaseProvider } from 'native-base';
-import { NavigationContainer } from '@react-navigation/native';
+import { NativeBaseProvider, extendTheme, useColorMode } from 'native-base';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NavigationContainer, DarkTheme as RNDarkTheme, DefaultTheme as RNLightTheme } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -31,6 +32,7 @@ import WorkoutEntryScreen from './src/screens/WorkoutEntryScreen';
 import MeasurementEntryScreen from './src/screens/MeasurementEntryScreen';
 import WeeklyProgramScreen from './src/screens/WeeklyProgramScreen';
 import WorkoutDetailScreen from './src/screens/WorkoutDetailScreen';
+import ExerciseImagesManagementScreen from './src/screens/ExerciseImagesManagementScreen';
 
 // Context
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -41,6 +43,11 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 // Main Tab Navigator
 function MainTabNavigator() {
+  const { colorMode } = useColorMode();
+  const tabActive = colorMode === 'dark' ? '#8EA6FF' : '#007AFF';
+  const tabInactive = colorMode === 'dark' ? '#94A3B8' : 'gray';
+  const tabBg = colorMode === 'dark' ? '#0E1730' : '#FFFFFF';
+  const tabBorder = colorMode === 'dark' ? '#1E2A4A' : '#E5E7EB';
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -61,8 +68,9 @@ function MainTabNavigator() {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#007AFF',
-        tabBarInactiveTintColor: 'gray',
+        tabBarActiveTintColor: tabActive,
+        tabBarInactiveTintColor: tabInactive,
+        tabBarStyle: { backgroundColor: tabBg, borderTopColor: tabBorder },
         headerShown: false,
       })}
     >
@@ -116,9 +124,28 @@ function RootNavigator() {
           <Stack.Screen name="MeasurementEntry" component={MeasurementEntryScreen} />
           <Stack.Screen name="WeeklyProgram" component={WeeklyProgramScreen} />
           <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} />
+          <Stack.Screen name="ExerciseImagesManagement" component={ExerciseImagesManagementScreen} />
         </>
       )}
     </Stack.Navigator>
+  );
+}
+
+// Inner App with Auth and Sync
+function InnerApp() {
+  const { colorMode } = useColorMode();
+  const navTheme = colorMode === 'dark'
+    ? { ...RNDarkTheme, colors: { ...RNDarkTheme.colors, primary: '#8EA6FF', background: '#0B1220', card: '#0E1730', text: '#E6EAF5', border: '#1E2A4A' } }
+    : { ...RNLightTheme, colors: { ...RNLightTheme.colors, primary: '#0D6EFD', background: '#F7F7FB', card: '#FFFFFF', text: '#1F2937', border: '#E5E7EB' } };
+  return (
+    <AuthProvider>
+      <SyncProvider>
+        <NavigationContainer theme={navTheme}>
+          <RootNavigator />
+          <StatusBar style={colorMode === 'dark' ? 'light' : 'dark'} />
+        </NavigationContainer>
+      </SyncProvider>
+    </AuthProvider>
   );
 }
 
@@ -153,15 +180,18 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NativeBaseProvider>
-        <AuthProvider>
-          <SyncProvider>
-            <NavigationContainer>
-              <RootNavigator />
-              <StatusBar style="auto" />
-            </NavigationContainer>
-          </SyncProvider>
-        </AuthProvider>
+      <NativeBaseProvider theme={extendTheme({ config: { initialColorMode: 'light', useSystemColorMode: false } })} colorModeManager={{
+        get: async () => {
+          try {
+            const val = await AsyncStorage.getItem('@ie_color_mode');
+            return val === 'dark' ? 'dark' : 'light';
+          } catch { return 'light'; }
+        },
+        set: async (value: any) => {
+          try { await AsyncStorage.setItem('@ie_color_mode', value === 'dark' ? 'dark' : 'light'); } catch {}
+        }
+      }}>
+        <InnerApp />
       </NativeBaseProvider>
     </SafeAreaProvider>
   );

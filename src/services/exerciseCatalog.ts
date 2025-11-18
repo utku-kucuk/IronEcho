@@ -52,6 +52,12 @@ export async function addExerciseName(userId: string, name: string) {
   }
 }
 
+export async function removeExerciseName(userId: string, name: string) {
+  const cat = await getCatalog(userId);
+  cat.exercises = cat.exercises.filter(e => e.toLowerCase() !== name.toLowerCase());
+  await saveCatalog(userId, cat);
+}
+
 export async function addMuscleGroup(userId: string, name: string) {
   const cat = await getCatalog(userId);
   if (!cat.muscleGroups.some(e => e.toLowerCase() === name.toLowerCase())) {

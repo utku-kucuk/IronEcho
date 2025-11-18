@@ -32,6 +32,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setIsLoading(true);
       
+      // Wait for Realm to be initialized
+      let retries = 0;
+      while (!realmDB.isRealmInitialized() && retries < 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        retries++;
+      }
+      
+      if (!realmDB.isRealmInitialized()) {
+        console.warn('Realm not initialized yet, skipping auth check');
+        setIsLoading(false);
+        return;
+      }
+      
       // Check if user is authenticated
       if (apiClient.isAuthenticated()) {
         // Try to get user from local storage first
@@ -59,6 +72,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setIsLoading(true);
       
+      // Ensure Realm is initialized
+      if (!realmDB.isRealmInitialized()) {
+        throw new Error('Database not ready. Please wait a moment and try again.');
+      }
+      
       const { user: serverUser, tokens } = await apiClient.login(credentials);
       
       // Save user to local database
@@ -67,10 +85,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       setUser(userWithId);
       
-      console.log('✅ Login successful');
-    } catch (error) {
-      console.error('❌ Login failed:', error);
-      throw error;
+      // Avoid noisy console.logs in production
+      // console.log('✅ Login successful');
+    } catch (error: any) {
+      // Normalize axios error -> friendly message
+      const status = error?.response?.status;
+      let message = 'Authentication failed';
+      if (status === 400 || status === 401) {
+        message = 'Invalid email or password';
+      } else if (status === 429) {
+        message = 'Too many attempts. Please wait a minute and try again.';
+      } else if (error?.message) {
+        message = error.message;
+      }
+      throw new Error(message);
     } finally {
       setIsLoading(false);
     }
@@ -80,6 +108,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setIsLoading(true);
       
+      // Ensure Realm is initialized
+      if (!realmDB.isRealmInitialized()) {
+        throw new Error('Database not ready. Please wait a moment and try again.');
+      }
+      
       const { user: serverUser, tokens } = await apiClient.register(data);
       
       // Save user to local database
@@ -88,10 +121,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       setUser(userWithId);
       
-      console.log('✅ Registration successful');
-    } catch (error) {
-      console.error('❌ Registration failed:', error);
-      throw error;
+      // console.log('✅ Registration successful');
+    } catch (error: any) {
+      const status = error?.response?.status;
+      let message = 'Registration failed';
+      if (status === 409) {
+        message = 'User already exists';
+      } else if (status === 429) {
+        message = 'Too many attempts. Please wait and try again.';
+      } else if (error?.message) {
+        message = error.message;
+      }
+      throw new Error(message);
     } finally {
       setIsLoading(false);
     }
@@ -113,7 +154,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const updateUser = (updates: Partial<User>): void => {
-    if (user) {
+    if (user && realmDB.isRealmInitialized()) {
       const updatedUser = { ...user, ...updates };
       setUser(updatedUser);
       realmDB.saveUser(updatedUser);

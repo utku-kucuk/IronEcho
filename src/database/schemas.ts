@@ -275,6 +275,29 @@ export class SyncStatusSchema extends Realm.Object {
   };
 }
 
+// Realm Schema for ExerciseImage
+export class ExerciseImageSchema extends Realm.Object {
+  _id!: string;
+  exerciseName!: string;
+  uri!: string;
+  thumbnailUri?: string;
+  uploadedAt!: Date;
+  userId!: string;
+
+  static schema: Realm.ObjectSchema = {
+    name: 'ExerciseImage',
+    primaryKey: '_id',
+    properties: {
+      _id: 'string',
+      exerciseName: 'string',
+      uri: 'string',
+      thumbnailUri: 'string?',
+      uploadedAt: 'date',
+      userId: 'string'
+    }
+  };
+}
+
 // All schemas array
 export const schemas = [
   WorkoutSchema,
@@ -286,8 +309,9 @@ export const schemas = [
   MeasurementPhotoSchema,
   UserSchema,
   UserProfileSchema,
-  SyncStatusSchema
+  SyncStatusSchema,
+  ExerciseImageSchema
 ];
 
 // Schema versions for migrations
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;

@@ -21,6 +21,14 @@ class SyncService {
   constructor() {
     this.initializeNetworkListener();
     this.initializeSocket();
+    // Ensure UI gets an initial accurate snapshot once Realm is ready
+    try {
+      if (realmDB.isRealmInitialized()) {
+        this.updateSyncStatus();
+      }
+    } catch {
+      // Realm may not be initialized yet during module load; will update on first network event/sync
+    }
   }
 
   private initializeNetworkListener(): void {

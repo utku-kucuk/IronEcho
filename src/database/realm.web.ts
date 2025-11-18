@@ -1,12 +1,13 @@
 // Web stub for Realm to allow Expo web bundling.
 // Uses in-memory arrays; no persistence on web.
-import { Workout, Measurement, User, SyncStatus } from '../types';
+import { Workout, Measurement, User, SyncStatus, ExerciseImage } from '../types';
 
 class InMemoryDB {
   workouts: Record<string, Workout> = {};
   measurements: Record<string, Measurement> = {};
   users: Record<string, User> = {};
   syncStatus: SyncStatus | null = null;
+  exerciseImages: Record<string, ExerciseImage> = {};
 }
 
 class RealmWebDatabase {
@@ -125,8 +126,59 @@ class RealmWebDatabase {
     if (m) (m as any).synced = true;
   }
 
+  // ExerciseImage operations
+  createExerciseImage(image: Omit<ExerciseImage, '_id'>): ExerciseImage {
+    const id = this.generateId();
+    const newImage: ExerciseImage = {
+      _id: id,
+      ...image,
+      uploadedAt: new Date()
+    };
+    this.store.exerciseImages[id] = newImage;
+    return newImage;
+  }
+
+  getExerciseImageById(id: string): ExerciseImage | null {
+    return this.store.exerciseImages[id] ?? null;
+  }
+
+  getExerciseImages(exerciseName: string, userId: string): ExerciseImage[] {
+    return Object.values(this.store.exerciseImages)
+      .filter(img => img.exerciseName === exerciseName && img.userId === userId)
+      .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
+  }
+
+  getAllExerciseImages(userId: string): ExerciseImage[] {
+    return Object.values(this.store.exerciseImages)
+      .filter(img => img.userId === userId)
+      .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
+  }
+
+  deleteExerciseImage(id: string): boolean {
+    const exists = !!this.store.exerciseImages[id];
+    if (exists) delete this.store.exerciseImages[id];
+    return exists;
+  }
+
+  deleteExerciseImages(exerciseName: string, userId: string): number {
+    const toDelete = Object.values(this.store.exerciseImages)
+      .filter(img => img.exerciseName === exerciseName && img.userId === userId);
+    let count = 0;
+    toDelete.forEach(img => {
+      if (this.store.exerciseImages[img._id]) {
+        delete this.store.exerciseImages[img._id];
+        count++;
+      }
+    });
+    return count;
+  }
+
   private generateId(): string {
     return Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  }
+
+  isRealmInitialized(): boolean {
+    return this.isInitialized;
   }
 
   close(): void {

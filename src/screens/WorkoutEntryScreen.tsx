@@ -20,7 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { realmDB } from '../database/realm';
 import { saveDailyOverride, getTodaysProgram, DEFAULT_WEEKLY_PROGRAM, ProgramExerciseTemplate } from '../services/weeklyProgram';
-import { getCatalog, addExerciseName, addMuscleGroup, addExerciseType } from '../services/exerciseCatalog';
+import { getCatalog, addExerciseName } from '../services/exerciseCatalog';
 import { useAuth } from '../context/AuthContext';
 import { PresetExercise } from '../types';
 
@@ -69,11 +69,7 @@ export default function WorkoutEntryScreen() {
   const [isAddExerciseOpen, setIsAddExerciseOpen] = useState<boolean>(false);
   const [newExerciseName, setNewExerciseName] = useState<string>('');
   const [targetExerciseIndex, setTargetExerciseIndex] = useState<number | null>(null);
-  const [isAddGroupOpen, setIsAddGroupOpen] = useState<boolean>(false);
-  const [newGroupName, setNewGroupName] = useState<string>('');
-  const [isAddTypeOpen, setIsAddTypeOpen] = useState<boolean>(false);
-  const [newTypeName, setNewTypeName] = useState<string>('');
-  const [newTypeWeightBased, setNewTypeWeightBased] = useState<boolean>(true);
+  // Removed add-group/type; only exercise add remains
 
   const addExercise = () => {
     setExercises(prev => [...prev, { name: '', muscleGroup: 'other', type: 'strength', weightBased: true, sets: [{ reps: '', weight: '' }] }]);
@@ -281,8 +277,11 @@ export default function WorkoutEntryScreen() {
       }
 
       toast.show({ title: 'Saved', description: 'Workout saved locally' });
-      // @ts-ignore
-      navigation.goBack();
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        (navigation as any).navigate('Main');
+      }
     } catch (e: any) {
       toast.show({ title: 'Error', description: e.message || 'Failed to save workout' });
     }
@@ -303,8 +302,11 @@ export default function WorkoutEntryScreen() {
         repsCount: e.repsCount ? parseInt(e.repsCount, 10) : (e.sets[0]?.reps ? parseInt(e.sets[0].reps, 10) : 0)
       }));
       await saveDailyOverride(user._id, dateISO, plan);
-      // @ts-ignore
-      (navigation as any).goBack();
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        (navigation as any).navigate('Main');
+      }
     } catch (e: any) {
       toast.show({ title: 'Error', description: e?.message || 'Failed to save plan' });
     }
@@ -314,7 +316,13 @@ export default function WorkoutEntryScreen() {
     <Box flex={1} bg="gray.50" safeArea>
       <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg="white" borderBottomWidth={1} borderBottomColor="gray.200">
         <HStack alignItems="center" space={2}>
-          <Button variant="ghost" onPress={() => (navigation as any).goBack()} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
+          <Button variant="ghost" onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              (navigation as any).navigate('Main');
+            }
+          }} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
           <Text fontSize="lg" fontWeight="bold">New Workout</Text>
         </HStack>
         <Button colorScheme="primary" onPress={editWorkoutId ? saveWorkout : saveSchemaOverride} leftIcon={<Icon as={Ionicons} name="save" />}>Save</Button>
@@ -425,12 +433,6 @@ export default function WorkoutEntryScreen() {
                   ))}
                 </Select>
               </FormControl>
-              <IconButton
-                variant="outline"
-                onPress={() => { setNewGroupName(''); setIsAddGroupOpen(true); }}
-                icon={<Icon as={Ionicons} name="add-circle-outline" />}
-                accessibilityLabel="Add muscle group"
-              />
               <FormControl flex={1}>
                 <FormControl.Label>Type</FormControl.Label>
                 <Select
@@ -448,12 +450,6 @@ export default function WorkoutEntryScreen() {
                   ))}
                 </Select>
               </FormControl>
-              <IconButton
-                variant="outline"
-                onPress={() => { setNewTypeName(''); setNewTypeWeightBased(true); setIsAddTypeOpen(true); }}
-                icon={<Icon as={Ionicons} name="add-circle-outline" />}
-                accessibilityLabel="Add exercise type"
-              />
             </HStack>
             <HStack space={2} alignItems="flex-end">
               <FormControl flex={1}>
@@ -547,46 +543,7 @@ export default function WorkoutEntryScreen() {
         </Modal.Content>
       </Modal>
 
-      <Modal isOpen={isAddGroupOpen} onClose={() => setIsAddGroupOpen(false)}>
-        <Modal.Content>
-          <Modal.CloseButton />
-          <Modal.Header>Add Muscle Group</Modal.Header>
-          <Modal.Body>
-            <FormControl>
-              <FormControl.Label>Group Name</FormControl.Label>
-              <Input value={newGroupName} onChangeText={setNewGroupName} placeholder="e.g., glutes" />
-            </FormControl>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button onPress={async () => { const n = newGroupName.trim(); if (!n) return; setMuscleGroups(prev => [n, ...prev.filter(p => p.toLowerCase() !== n.toLowerCase())]); if (user) await addMuscleGroup(user._id, n); setIsAddGroupOpen(false); }}>Add</Button>
-          </Modal.Footer>
-        </Modal.Content>
-      </Modal>
-
-      <Modal isOpen={isAddTypeOpen} onClose={() => setIsAddTypeOpen(false)}>
-        <Modal.Content>
-          <Modal.CloseButton />
-          <Modal.Header>Add Exercise Type</Modal.Header>
-          <Modal.Body>
-            <VStack space={2}>
-              <FormControl>
-                <FormControl.Label>Type Name</FormControl.Label>
-                <Input value={newTypeName} onChangeText={setNewTypeName} placeholder="e.g., olympic" />
-              </FormControl>
-              <FormControl>
-                <FormControl.Label>Weight-based?</FormControl.Label>
-                <Select selectedValue={newTypeWeightBased ? 'yes' : 'no'} onValueChange={v => setNewTypeWeightBased(v === 'yes')} _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}>
-                  <Select.Item label="Yes" value="yes" />
-                  <Select.Item label="No" value="no" />
-                </Select>
-              </FormControl>
-            </VStack>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button onPress={async () => { const n = newTypeName.trim(); if (!n) return; const def = { name: n, weightBased: newTypeWeightBased }; setExerciseTypes(prev => [def, ...prev.filter(p => p.name.toLowerCase() !== n.toLowerCase())]); if (user) await addExerciseType(user._id, def); setIsAddTypeOpen(false); }}>Add</Button>
-          </Modal.Footer>
-        </Modal.Content>
-      </Modal>
+      {/* Removed add-group and add-type modals */}
     </Box>
   );
 }

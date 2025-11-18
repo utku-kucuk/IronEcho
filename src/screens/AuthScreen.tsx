@@ -14,13 +14,15 @@ import {
   Center,
   Heading,
   Icon,
-  Pressable
+  Pressable,
+  useColorMode
 } from 'native-base';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { LoginCredentials, RegisterData } from '../types';
 
 export default function AuthScreen() {
+  const { colorMode } = useColorMode();
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -35,6 +37,12 @@ export default function AuthScreen() {
 
   const { login, register } = useAuth();
   const toast = useToast();
+  const pageBg = colorMode === 'dark' ? 'gray.900' : 'gray.50';
+  const textSecondary = colorMode === 'dark' ? 'gray.300' : 'gray.600';
+  const inputBg = colorMode === 'dark' ? 'gray.800' : 'white';
+  const inputText = colorMode === 'dark' ? 'gray.100' : 'gray.800';
+  const inputPlaceholder = colorMode === 'dark' ? 'gray.400' : 'gray.500';
+  const inputBorder = colorMode === 'dark' ? 'gray.600' : 'gray.300';
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -107,7 +115,7 @@ export default function AuthScreen() {
   };
 
   return (
-    <Box flex={1} bg="gray.50" safeArea>
+    <Box flex={1} bg={pageBg} safeArea>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ flexGrow: 1 }}
@@ -122,7 +130,7 @@ export default function AuthScreen() {
             <Heading size="xl" color="primary.500">
               IronEcho
             </Heading>
-            <Text fontSize="md" color="gray.600" textAlign="center">
+            <Text fontSize="md" color={textSecondary} textAlign="center">
               Your personal fitness tracker
             </Text>
           </VStack>
@@ -142,6 +150,11 @@ export default function AuthScreen() {
                 textContentType="emailAddress"
                 returnKeyType="next"
                 blurOnSubmit={false}
+                bg={inputBg}
+                color={inputText}
+                placeholderTextColor={inputPlaceholder}
+                borderColor={inputBorder}
+                _focus={{ borderColor: 'primary.500' }}
               />
               <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
                 {errors.email}
@@ -157,6 +170,11 @@ export default function AuthScreen() {
                 onChangeText={(text) => setFormData(prev => ({ ...prev, password: text }))}
                 secureTextEntry
                 textContentType="password"
+                bg={inputBg}
+                color={inputText}
+                placeholderTextColor={inputPlaceholder}
+                borderColor={inputBorder}
+                _focus={{ borderColor: 'primary.500' }}
               />
               <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
                 {errors.password}
@@ -173,6 +191,11 @@ export default function AuthScreen() {
                   onChangeText={(text) => setFormData(prev => ({ ...prev, confirmPassword: text }))}
                   secureTextEntry
                   textContentType="password"
+                  bg={inputBg}
+                  color={inputText}
+                  placeholderTextColor={inputPlaceholder}
+                  borderColor={inputBorder}
+                  _focus={{ borderColor: 'primary.500' }}
                 />
                 <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
                   {errors.confirmPassword}
@@ -192,11 +215,13 @@ export default function AuthScreen() {
                     <Box
                       p={3}
                       borderRadius="md"
-                      bg={formData.gender === 'male' ? 'primary.100' : 'gray.100'}
+                      bg={formData.gender === 'male'
+                        ? (colorMode === 'dark' ? 'primary.900' : 'primary.100')
+                        : (colorMode === 'dark' ? 'gray.700' : 'gray.100')}
                       borderWidth={1}
-                      borderColor={formData.gender === 'male' ? 'primary.500' : 'gray.300'}
+                      borderColor={formData.gender === 'male' ? 'primary.500' : inputBorder}
                     >
-                      <Text textAlign="center" color={formData.gender === 'male' ? 'primary.600' : 'gray.600'}>
+                      <Text textAlign="center" color={formData.gender === 'male' ? 'primary.400' : textSecondary}>
                         Male
                       </Text>
                     </Box>
@@ -208,11 +233,13 @@ export default function AuthScreen() {
                     <Box
                       p={3}
                       borderRadius="md"
-                      bg={formData.gender === 'female' ? 'primary.100' : 'gray.100'}
+                      bg={formData.gender === 'female'
+                        ? (colorMode === 'dark' ? 'primary.900' : 'primary.100')
+                        : (colorMode === 'dark' ? 'gray.700' : 'gray.100')}
                       borderWidth={1}
-                      borderColor={formData.gender === 'female' ? 'primary.500' : 'gray.300'}
+                      borderColor={formData.gender === 'female' ? 'primary.500' : inputBorder}
                     >
-                      <Text textAlign="center" color={formData.gender === 'female' ? 'primary.600' : 'gray.600'}>
+                      <Text textAlign="center" color={formData.gender === 'female' ? 'primary.400' : textSecondary}>
                         Female
                       </Text>
                     </Box>
@@ -233,11 +260,13 @@ export default function AuthScreen() {
                     <Box
                       p={3}
                       borderRadius="md"
-                      bg={formData.units === 'metric' ? 'primary.100' : 'gray.100'}
+                      bg={formData.units === 'metric'
+                        ? (colorMode === 'dark' ? 'primary.900' : 'primary.100')
+                        : (colorMode === 'dark' ? 'gray.700' : 'gray.100')}
                       borderWidth={1}
-                      borderColor={formData.units === 'metric' ? 'primary.500' : 'gray.300'}
+                      borderColor={formData.units === 'metric' ? 'primary.500' : inputBorder}
                     >
-                      <Text textAlign="center" color={formData.units === 'metric' ? 'primary.600' : 'gray.600'}>
+                      <Text textAlign="center" color={formData.units === 'metric' ? 'primary.400' : textSecondary}>
                         Metric (kg, cm)
                       </Text>
                     </Box>
@@ -249,11 +278,13 @@ export default function AuthScreen() {
                     <Box
                       p={3}
                       borderRadius="md"
-                      bg={formData.units === 'imperial' ? 'primary.100' : 'gray.100'}
+                      bg={formData.units === 'imperial'
+                        ? (colorMode === 'dark' ? 'primary.900' : 'primary.100')
+                        : (colorMode === 'dark' ? 'gray.700' : 'gray.100')}
                       borderWidth={1}
-                      borderColor={formData.units === 'imperial' ? 'primary.500' : 'gray.300'}
+                      borderColor={formData.units === 'imperial' ? 'primary.500' : inputBorder}
                     >
-                      <Text textAlign="center" color={formData.units === 'imperial' ? 'primary.600' : 'gray.600'}>
+                      <Text textAlign="center" color={formData.units === 'imperial' ? 'primary.400' : textSecondary}>
                         Imperial (lbs, in)
                       </Text>
                     </Box>

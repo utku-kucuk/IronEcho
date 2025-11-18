@@ -1,16 +1,21 @@
 import React, { useState } from 'react';
-import { Box, VStack, HStack, Text, Input, Button, Icon, ScrollView, useToast } from 'native-base';
+import { Box, VStack, HStack, Text, Input, Button, Icon, useToast, FormControl, Select, CheckIcon, Image, Pressable, FlatList, useColorModeValue } from 'native-base';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { realmDB } from '../database/realm';
 import { useAuth } from '../context/AuthContext';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function MeasurementEntryScreen() {
   const navigation = useNavigation();
+  const route = useRoute<any>();
   const { user } = useAuth();
   const toast = useToast();
 
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [dateYear, setDateYear] = useState<string>(new Date().getFullYear().toString());
+  const [dateMonth, setDateMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'));
+  const [dateDay, setDateDay] = useState<string>(String(new Date().getDate()).padStart(2, '0'));
   const [neck, setNeck] = useState('');
   const [waist, setWaist] = useState('');
   const [chest, setChest] = useState('');
@@ -23,12 +28,27 @@ export default function MeasurementEntryScreen() {
   const [armRightContracted, setArmRightContracted] = useState('');
   const [weight, setWeight] = useState('');
   const [bodyFat, setBodyFat] = useState('');
+  const [photos, setPhotos] = useState<Array<{ uri: string; date: Date; type: string }>>([]);
+  const editId: string | undefined = route.params?.editMeasurementId;
+
+  const recomputeDate = (y: string, m: string, d: string) => {
+    setDate(`${y}-${m}-${d}`);
+  };
+
+  const pickPhoto = async () => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.8 });
+      if (!res.canceled && res.assets && res.assets[0]) {
+        setPhotos(prev => [...prev, { uri: res.assets[0].uri, date: new Date(), type: 'progress' }]);
+      }
+    } catch {}
+  };
 
   const save = () => {
     try {
       if (!user) throw new Error('Not authenticated');
 
-      realmDB.createMeasurement({
+      const payload: any = {
         userId: user._id,
         date: new Date(date),
         measurements: {
@@ -46,59 +66,229 @@ export default function MeasurementEntryScreen() {
         weight: weight ? parseFloat(weight) : undefined,
         bodyFat: bodyFat ? parseFloat(bodyFat) : undefined,
         notes: undefined,
-        photos: [],
+        photos,
         lastModified: new Date(),
         clientTimestamp: new Date()
-      } as any);
+      };
+
+      if (editId) {
+        realmDB.updateMeasurement(editId, payload);
+      } else {
+        realmDB.createMeasurement(payload);
+      }
 
       toast.show({ title: 'Saved', description: 'Measurements saved locally' });
-      // @ts-ignore
-      navigation.goBack();
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        (navigation as any).navigate('Main');
+      }
     } catch (e: any) {
       toast.show({ title: 'Error', description: e.message || 'Failed to save measurements' });
     }
   };
 
+  React.useEffect(() => {
+    if (!user || !editId) return;
+    const existing = realmDB.getMeasurementById(editId);
+    if (existing) {
+      const d = new Date(existing.date);
+      setDate(d.toISOString().slice(0,10));
+      setDateYear(String(d.getFullYear()));
+      setDateMonth(String(d.getMonth()+1).padStart(2,'0'));
+      setDateDay(String(d.getDate()).padStart(2,'0'));
+      setWeight(existing.weight != null ? String(existing.weight) : '');
+      setBodyFat(existing.bodyFat != null ? String(existing.bodyFat) : '');
+      setNeck(existing.measurements?.neck != null ? String(existing.measurements.neck) : '');
+      setWaist(existing.measurements?.waist != null ? String(existing.measurements.waist) : '');
+      setChest(existing.measurements?.chest != null ? String(existing.measurements.chest) : '');
+      setHips(existing.measurements?.hips != null ? String(existing.measurements.hips) : '');
+      setThighLeft(existing.measurements?.thighLeft != null ? String(existing.measurements.thighLeft) : '');
+      setThighRight(existing.measurements?.thighRight != null ? String(existing.measurements.thighRight) : '');
+      setArmLeftRelaxed(existing.measurements?.armLeftRelaxed != null ? String(existing.measurements.armLeftRelaxed) : '');
+      setArmRightRelaxed(existing.measurements?.armRightRelaxed != null ? String(existing.measurements.armRightRelaxed) : '');
+      setArmLeftContracted(existing.measurements?.armLeftContracted != null ? String(existing.measurements.armLeftContracted) : '');
+      setArmRightContracted(existing.measurements?.armRightContracted != null ? String(existing.measurements.armRightContracted) : '');
+      setPhotos(existing.photos || []);
+    }
+  }, [editId, user]);
+
+  const handleDelete = () => {
+    try {
+      if (editId) {
+        realmDB.deleteMeasurement(editId);
+        if (navigation.canGoBack()) navigation.goBack(); else (navigation as any).navigate('Main');
+      }
+    } catch {}
+  };
+
+  const pageBg = useColorModeValue('gray.50','gray.900');
+  const headerBg = useColorModeValue('white','gray.900');
+  const cardBg = useColorModeValue('white','gray.800');
   return (
-    <Box flex={1} bg="gray.50" safeArea>
-      <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg="white" borderBottomWidth={1} borderBottomColor="gray.200">
+    <Box flex={1} bg={pageBg} safeArea>
+      <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg={headerBg} borderBottomWidth={1} borderBottomColor={useColorModeValue('gray.200','gray.700')}>
         <HStack alignItems="center" space={2}>
-          <Button variant="ghost" onPress={() => (navigation as any).goBack()} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
-          <Text fontSize="lg" fontWeight="bold">New Measurement</Text>
+          <Button variant="ghost" onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              (navigation as any).navigate('Main');
+            }
+          }} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
+          <Text fontSize="lg" fontWeight="bold">{editId ? 'Edit Measurement' : 'New Measurement'}</Text>
         </HStack>
-        <Button colorScheme="primary" onPress={save} leftIcon={<Icon as={Ionicons} name="save" />}>Save</Button>
+        <HStack space={2}>
+          {editId ? (
+            <Button variant="outline" colorScheme="red" onPress={handleDelete} leftIcon={<Icon as={Ionicons} name="trash" />}>Delete</Button>
+          ) : null}
+          <Button colorScheme="primary" onPress={save} leftIcon={<Icon as={Ionicons} name="save" />}>Save</Button>
+        </HStack>
       </HStack>
 
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
-        <VStack space={3} bg="white" p={4} borderRadius="lg" shadow={1}>
-          <Text fontWeight="semibold">Date</Text>
-          <Input value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
+      <FlatList
+        data={[0]}
+        keyExtractor={() => 'measurement-form'}
+        renderItem={null}
+        contentContainerStyle={{ padding: 16 }}
+        ListHeaderComponent={() => (
+        <VStack space={4}>
+          <VStack space={3} bg={cardBg} p={4} borderRadius="lg" shadow={1}>
+          <FormControl>
+            <FormControl.Label>Date</FormControl.Label>
+            <HStack space={2}>
+              <Select
+                flex={1}
+                selectedValue={dateYear}
+                minWidth="100%"
+                accessibilityLabel="Year"
+                placeholder="Year"
+                _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                onValueChange={value => { setDateYear(value); recomputeDate(value, dateMonth, dateDay); }}
+              >
+                {Array.from({ length: 6 }).map((_, i) => {
+                  const y = (new Date().getFullYear() - i).toString();
+                  return <Select.Item key={`year-${y}`} label={y} value={y} />;
+                })}
+              </Select>
+              <Select
+                flex={1}
+                selectedValue={dateMonth}
+                accessibilityLabel="Month"
+                placeholder="Month"
+                _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                onValueChange={value => { setDateMonth(value); recomputeDate(dateYear, value, dateDay); }}
+              >
+                {Array.from({ length: 12 }).map((_, i) => {
+                  const m = String(i + 1).padStart(2, '0');
+                  return <Select.Item key={`month-${m}`} label={m} value={m} />;
+                })}
+              </Select>
+              <Select
+                flex={1}
+                selectedValue={dateDay}
+                accessibilityLabel="Day"
+                placeholder="Day"
+                _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                onValueChange={value => { setDateDay(value); recomputeDate(dateYear, dateMonth, value); }}
+              >
+                {Array.from({ length: 31 }).map((_, i) => {
+                  const d = String(i + 1).padStart(2, '0');
+                  return <Select.Item key={`day-${d}`} label={d} value={d} />;
+                })}
+              </Select>
+            </HStack>
+          </FormControl>
+
+          <Text fontWeight="semibold" mt={2}>Body Metrics</Text>
           <HStack space={2}>
-            <Input flex={1} placeholder="Neck" value={neck} onChangeText={setNeck} keyboardType="decimal-pad" />
-            <Input flex={1} placeholder="Waist" value={waist} onChangeText={setWaist} keyboardType="decimal-pad" />
+            <FormControl flex={1}>
+              <FormControl.Label>Weight (kg)</FormControl.Label>
+              <Input value={weight} onChangeText={setWeight} keyboardType="decimal-pad" placeholder="e.g. 80.5" />
+            </FormControl>
+            <FormControl flex={1}>
+              <FormControl.Label>Body Fat (%)</FormControl.Label>
+              <Input value={bodyFat} onChangeText={setBodyFat} keyboardType="decimal-pad" placeholder="e.g. 15.2" />
+            </FormControl>
+          </HStack>
+
+          <Text fontWeight="semibold" mt={2}>Circumferences (cm)</Text>
+          <HStack space={2}>
+            <FormControl flex={1}>
+              <FormControl.Label>Neck</FormControl.Label>
+              <Input value={neck} onChangeText={setNeck} keyboardType="decimal-pad" />
+            </FormControl>
+            <FormControl flex={1}>
+              <FormControl.Label>Waist</FormControl.Label>
+              <Input value={waist} onChangeText={setWaist} keyboardType="decimal-pad" />
+            </FormControl>
           </HStack>
           <HStack space={2}>
-            <Input flex={1} placeholder="Chest" value={chest} onChangeText={setChest} keyboardType="decimal-pad" />
-            <Input flex={1} placeholder="Hips" value={hips} onChangeText={setHips} keyboardType="decimal-pad" />
+            <FormControl flex={1}>
+              <FormControl.Label>Chest</FormControl.Label>
+              <Input value={chest} onChangeText={setChest} keyboardType="decimal-pad" />
+            </FormControl>
+            <FormControl flex={1}>
+              <FormControl.Label>Hips</FormControl.Label>
+              <Input value={hips} onChangeText={setHips} keyboardType="decimal-pad" />
+            </FormControl>
           </HStack>
           <HStack space={2}>
-            <Input flex={1} placeholder="Thigh L" value={thighLeft} onChangeText={setThighLeft} keyboardType="decimal-pad" />
-            <Input flex={1} placeholder="Thigh R" value={thighRight} onChangeText={setThighRight} keyboardType="decimal-pad" />
+            <FormControl flex={1}>
+              <FormControl.Label>Thigh Left</FormControl.Label>
+              <Input value={thighLeft} onChangeText={setThighLeft} keyboardType="decimal-pad" />
+            </FormControl>
+            <FormControl flex={1}>
+              <FormControl.Label>Thigh Right</FormControl.Label>
+              <Input value={thighRight} onChangeText={setThighRight} keyboardType="decimal-pad" />
+            </FormControl>
           </HStack>
           <HStack space={2}>
-            <Input flex={1} placeholder="Arm L relaxed" value={armLeftRelaxed} onChangeText={setArmLeftRelaxed} keyboardType="decimal-pad" />
-            <Input flex={1} placeholder="Arm R relaxed" value={armRightRelaxed} onChangeText={setArmRightRelaxed} keyboardType="decimal-pad" />
+            <FormControl flex={1}>
+              <FormControl.Label>Arm Left (relaxed)</FormControl.Label>
+              <Input value={armLeftRelaxed} onChangeText={setArmLeftRelaxed} keyboardType="decimal-pad" />
+            </FormControl>
+            <FormControl flex={1}>
+              <FormControl.Label>Arm Right (relaxed)</FormControl.Label>
+              <Input value={armRightRelaxed} onChangeText={setArmRightRelaxed} keyboardType="decimal-pad" />
+            </FormControl>
           </HStack>
           <HStack space={2}>
-            <Input flex={1} placeholder="Arm L contracted" value={armLeftContracted} onChangeText={setArmLeftContracted} keyboardType="decimal-pad" />
-            <Input flex={1} placeholder="Arm R contracted" value={armRightContracted} onChangeText={setArmRightContracted} keyboardType="decimal-pad" />
+            <FormControl flex={1}>
+              <FormControl.Label>Arm Left (contracted)</FormControl.Label>
+              <Input value={armLeftContracted} onChangeText={setArmLeftContracted} keyboardType="decimal-pad" />
+            </FormControl>
+            <FormControl flex={1}>
+              <FormControl.Label>Arm Right (contracted)</FormControl.Label>
+              <Input value={armRightContracted} onChangeText={setArmRightContracted} keyboardType="decimal-pad" />
+            </FormControl>
           </HStack>
-          <HStack space={2}>
-            <Input flex={1} placeholder="Weight" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" />
-            <Input flex={1} placeholder="Body fat %" value={bodyFat} onChangeText={setBodyFat} keyboardType="decimal-pad" />
+          </VStack>
+
+          <VStack space={3} bg={cardBg} p={4} borderRadius="lg" shadow={1} mt={4}>
+          <HStack justifyContent="space-between" alignItems="center">
+            <Text fontWeight="semibold">Photos (optional)</Text>
+            <Button variant="outline" size="sm" leftIcon={<Icon as={Ionicons} name="add" />} onPress={pickPhoto}>Add Photo</Button>
           </HStack>
+          {photos.length > 0 && (
+            <Box>
+              <FlatList
+                horizontal
+                data={photos}
+                keyExtractor={(p, i) => `${p.uri}-${i}`}
+                renderItem={({ item, index }) => (
+                  <Pressable key={`photo-${index}`}>
+                    <Image source={{ uri: item.uri }} alt="photo" width="100px" height="100px" borderRadius="md" mr={2} />
+                  </Pressable>
+                )}
+                showsHorizontalScrollIndicator={false}
+              />
+            </Box>
+          )}
+          </VStack>
         </VStack>
-      </ScrollView>
+        )}
+      />
     </Box>
   );
 }

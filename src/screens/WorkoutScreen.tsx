@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   VStack,
@@ -12,23 +12,26 @@ import {
   Pressable,
   Badge,
   Spinner,
-  Radio,
   Actionsheet,
   useDisclose,
   useBreakpointValue,
   Input,
   Select,
-  CheckIcon
+  CheckIcon,
+  Image,
+  Modal,
+  useColorModeValue
 } from 'native-base';
-import { FlatList, Platform } from 'react-native';
+import { FlatList, Platform, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 import { realmDB } from '../database/realm';
-import { Workout } from '../types';
+import { Workout, ExerciseImage } from '../types';
 import { getTodayKey, getWeeklyProgram, Weekday, getDailyOverride } from '../services/weeklyProgram';
+import { ExerciseImageService } from '../services/exerciseImageService';
 
 export default function WorkoutScreen() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -41,6 +44,9 @@ export default function WorkoutScreen() {
   const [isOffDay, setIsOffDay] = useState<boolean>(false);
   const [loadFromDay, setLoadFromDay] = useState<Weekday | ''>('');
   const [loadedFromDayTemp, setLoadedFromDayTemp] = useState<Weekday | null>(null);
+  const [exerciseImages, setExerciseImages] = useState<Record<string, ExerciseImage[]>>({});
+  const [selectedImage, setSelectedImage] = useState<ExerciseImage | null>(null);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const dayPicker = useDisclose();
   const loadDayPicker = useDisclose();
   const isNarrow = useBreakpointValue({ base: true, md: false });
@@ -50,6 +56,12 @@ export default function WorkoutScreen() {
   const navigation = useNavigation();
   const toast = useToast();
   const isWeb = Platform.OS === 'web';
+  const pageBg = useColorModeValue('gray.50', 'gray.900');
+  const cardBg = useColorModeValue('white', 'gray.800');
+  const headerBg = useColorModeValue('white', 'gray.900');
+  const textPrimary = useColorModeValue('gray.800', 'gray.100');
+  const textSecondary = useColorModeValue('gray.600', 'gray.300');
+  const headerBorder = useColorModeValue('gray.200', 'gray.700');
 
   useEffect(() => {
     loadWorkouts();
@@ -94,52 +106,87 @@ export default function WorkoutScreen() {
     React.useCallback(() => {
       refreshProgramForDay();
       loadWorkouts();
+      loadExerciseImages();
     }, [refreshProgramForDay])
   );
 
-  useEffect(() => {
+  const loadExerciseImages = () => {
     if (!user) return;
+    const allImages = ExerciseImageService.getAllExerciseImages(user._id);
+    const imagesByExercise: Record<string, ExerciseImage[]> = {};
+    allImages.forEach(img => {
+      if (!imagesByExercise[img.exerciseName]) {
+        imagesByExercise[img.exerciseName] = [];
+      }
+      imagesByExercise[img.exerciseName].push(img);
+    });
+    setExerciseImages(imagesByExercise);
+  };
+
+  // Calculate target weights function - takes level as parameter to ensure immediate update
+  const calculateTargetsWithLevel = useCallback((currentLevel: 'beginner' | 'intermediate' | 'advanced') => {
+    if (!user || !todayPlan || todayPlan.length === 0) return;
+    // Use all sessions (not only same weekday) to better reflect real progression
     const all = realmDB.getWorkouts(user._id, 500, 0).sort((a: any, b: any) => +new Date(b.date) - +new Date(a.date));
-    const weekdayIndex = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'].indexOf(selectedDay);
-    const filtered = all.filter((w: any) => new Date(w.date).getDay() === weekdayIndex);
     const nextTargets: Record<number, number | null> = {};
+
     todayPlan.forEach((ex: any, idx: number) => {
       const setsCount = ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0);
       const repsCount = ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0);
-      const sessions: number[] = [];
-      for (const w of filtered) {
-        const match = w.exercises.find((e: any) => e.name.toLowerCase() === (ex.name || '').toLowerCase());
-        if (match) {
-          const schemeMatches = match.sets.length === setsCount && match.sets.every((s: any) => s.reps === repsCount);
-          if (schemeMatches) {
-            const weights = match.sets.map((s: any) => s.weight || 0).filter((v: number) => v > 0);
-            if (weights.length > 0) {
-              const avg = weights.reduce((a: number, b: number) => a + b, 0) / weights.length;
-              sessions.push(avg);
-            }
-          }
-        }
-        if (sessions.length >= 2) break;
+
+      // Build history from recent workouts for the same exercise and scheme
+      const history: Array<{ date: Date; avg: number }> = [];
+      for (const w of all) {
+        const match = w.exercises.find((e: any) => e.name?.toLowerCase() === (ex.name || '').toLowerCase());
+        if (!match) continue;
+        const schemeMatches = match.sets.length === setsCount && match.sets.every((s: any) => s.reps === repsCount);
+        if (!schemeMatches) continue;
+        const weights = match.sets.map((s: any) => s.weight || 0).filter((v: number) => v > 0);
+        if (weights.length === 0) continue;
+        const avg = weights.reduce((a: number, b: number) => a + b, 0) / weights.length;
+        history.push({ date: new Date(w.date), avg });
       }
-      if (sessions.length === 0) { nextTargets[idx] = null; return; }
-      const mean = sessions.reduce((a: number, b: number) => a + b, 0) / sessions.length;
-      const lastMatch = filtered.find((w: any) => {
-        const e = w.exercises.find((e2: any) => e2.name.toLowerCase() === (ex.name || '').toLowerCase());
-        return e && e.sets.length === setsCount && e.sets.every((s: any) => s.reps === repsCount);
-      });
-      const msDiff = lastMatch ? (Date.now() - new Date(lastMatch.date).getTime()) : 0;
-      const weeksSince = lastMatch ? Math.max(0, msDiff / (1000 * 60 * 60 * 24 * 7)) : 0;
-      let bumpPercent = 0;
-      if (level === 'beginner' && weeksSince >= 1) bumpPercent = 0.075;
-      if (level === 'intermediate' && weeksSince >= 2) bumpPercent = 0.04;
-      if (level === 'advanced' && weeksSince >= 3) bumpPercent = 0.025;
-      const bumped = mean * (1 + bumpPercent);
-      const step = 2.5;
-      const rounded = Math.round(bumped / step) * step;
-      nextTargets[idx] = Number(rounded.toFixed(1));
+
+      // Sort newest first
+      history.sort((a, b) => b.date.getTime() - a.date.getTime());
+      if (history.length === 0) { nextTargets[idx] = null; return; }
+
+      // Determine averaging window by level
+      let windowSize = 1;
+      if (currentLevel === 'intermediate') {
+        windowSize = Math.min(2, history.length);
+      } else if (currentLevel === 'advanced') {
+        // Use last 3-4 sessions if available
+        if (history.length >= 4) windowSize = 4;
+        else if (history.length >= 3) windowSize = 3;
+        else windowSize = history.length;
+      }
+
+      const recent = history.slice(0, windowSize);
+      const baseAvg = recent.reduce((s, h) => s + h.avg, 0) / recent.length;
+      if (!baseAvg || baseAvg <= 0 || isNaN(baseAvg)) { nextTargets[idx] = null; return; }
+
+      // Fixed mid-range multipliers per level (beginner 7.5%, intermediate 4%, advanced 2.5%)
+      const percent = currentLevel === 'beginner' ? 0.075
+        : currentLevel === 'intermediate' ? 0.04
+        : 0.025;
+
+      let bumped = baseAvg * (1 + percent);
+      if (bumped - baseAvg < 0.5) bumped = baseAvg + 0.5; // ensure visible progress
+
+      const suggested = Math.max(bumped, baseAvg);
+      nextTargets[idx] = Number((Math.round(suggested * 10) / 10).toFixed(1));
     });
+
     setTargets(nextTargets);
-  }, [todayPlan, selectedDay, user, level]);
+  }, [todayPlan, user]);
+
+  // Calculate targets when dependencies change
+  useEffect(() => {
+    if (user && todayPlan && todayPlan.length > 0) {
+      calculateTargetsWithLevel(level);
+    }
+  }, [todayPlan, selectedDay, user, level, calculateTargetsWithLevel]);
 
   const saveTodayAsWorkout = () => {
     try {
@@ -214,7 +261,7 @@ export default function WorkoutScreen() {
   const renderWorkoutItem = ({ item }: { item: Workout }) => (
     <Pressable onPress={() => {(navigation as any).navigate('WorkoutDetail' as never, { id: item._id } as never)}}>
       <Box
-        bg="white"
+        bg={cardBg}
         p={4}
         borderRadius="lg"
         mb={3}
@@ -224,10 +271,10 @@ export default function WorkoutScreen() {
       >
         <HStack justifyContent="space-between" alignItems="center" mb={2}>
           <VStack flex={1}>
-            <Text fontSize="lg" fontWeight="bold" color="gray.800">
+            <Text fontSize="lg" fontWeight="bold" color={textPrimary}>
               {formatDate(item.date)}
             </Text>
-            <Text fontSize="sm" color="gray.600">
+            <Text fontSize="sm" color={textSecondary}>
               {item.exercises.length} exercise{item.exercises.length !== 1 ? 's' : ''}
             </Text>
           </VStack>
@@ -246,16 +293,16 @@ export default function WorkoutScreen() {
         <VStack space={1}>
           {item.exercises.slice(0, 2).map((exercise, index) => (
             <HStack key={index} justifyContent="space-between">
-              <Text fontSize="sm" color="gray.700" flex={1}>
+              <Text fontSize="sm" color={textPrimary} flex={1}>
                 {exercise.name}
               </Text>
-              <Text fontSize="sm" color="gray.600">
+              <Text fontSize="sm" color={textSecondary}>
                 {exercise.sets.length} set{exercise.sets.length !== 1 ? 's' : ''}
               </Text>
             </HStack>
           ))}
           {item.exercises.length > 2 && (
-            <Text fontSize="sm" color="gray.500">
+            <Text fontSize="sm" color={textSecondary}>
               +{item.exercises.length - 2} more exercise{item.exercises.length - 2 !== 1 ? 's' : ''}
             </Text>
           )}
@@ -265,11 +312,11 @@ export default function WorkoutScreen() {
   );
 
   const renderTodayPlan = () => (
-    <VStack space={3} bg="white" p={4} borderRadius="lg" shadow={1} mb={4}>
+    <VStack space={3} bg={cardBg} p={4} borderRadius="lg" shadow={1} mb={4}>
       <HStack justifyContent="space-between" alignItems="center">
         <HStack space={2} alignItems="center">
           <Icon as={Ionicons} name="calendar" />
-          <Text fontWeight="bold">Today's Plan</Text>
+          <Text fontWeight="bold" color={textPrimary}>Today's Plan</Text>
         </HStack>
         <Button size="sm" colorScheme="primary" variant="subtle" onPress={() => {
           const map = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
@@ -282,42 +329,28 @@ export default function WorkoutScreen() {
           (navigation as any).navigate('WorkoutEntry' as never, { presetPlan: todayPlan, weekday: selectedDay, level, dateISO } as never);
         }} leftIcon={<Icon as={Ionicons} name="create-outline" />}>Edit</Button>
       </HStack>
-      <HStack space={2} alignItems="center" justifyContent="space-between">
+      <VStack space={2}>
+        <Text>Level:</Text>
         <HStack space={2} alignItems="center">
-          <Text>Form:</Text>
-          {isWeb ? (
-            <Select selectedValue={level} minW={36} _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }} onValueChange={async (v) => {
-              setLevel(v as any);
-              try { if (user) await AsyncStorage.setItem(`progression_level_${user._id}_${selectedDay}`, v); } catch {}
-            }}>
-              <Select.Item label="Yeni başlayan" value="beginner" />
-              <Select.Item label="Orta seviye" value="intermediate" />
-              <Select.Item label="İleri seviye" value="advanced" />
-            </Select>
-          ) : (
-            <Radio.Group
-              name="progressionLevel"
-              accessibilityLabel="Progression level"
-              value={level}
-              onChange={async (v) => {
-                setLevel(v as any);
-                try { if (user) await AsyncStorage.setItem(`progression_level_${user._id}_${selectedDay}`, v as string); } catch {}
-              }}
-            >
-              <HStack space={4}>
-                <Radio value="beginner">Yeni başlayan</Radio>
-                <Radio value="intermediate">Orta seviye</Radio>
-                <Radio value="advanced">İleri seviye</Radio>
-              </HStack>
-            </Radio.Group>
-          )}
+          <Select selectedValue={level} minW={36} flex={1} _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }} onValueChange={async (v) => {
+            const newLevel = v as 'beginner' | 'intermediate' | 'advanced';
+            try { if (user) await AsyncStorage.setItem(`progression_level_${user._id}_${selectedDay}`, v); } catch {}
+            setLevel(newLevel);
+            if (user && todayPlan && todayPlan.length > 0) {
+              calculateTargetsWithLevel(newLevel);
+            }
+          }}>
+            <Select.Item label="Beginner" value="beginner" />
+            <Select.Item label="Intermediate" value="intermediate" />
+            <Select.Item label="Advanced" value="advanced" />
+          </Select>
+          <Button variant="outline" size="sm" onPress={() => calculateTargetsWithLevel(level)} leftIcon={<Icon as={Ionicons} name="refresh" />}>Recalculate</Button>
         </HStack>
-        {/* Removed duplicate Program button */}
-      </HStack>
+      </VStack>
 
       {isOffDay && (
         <VStack space={2}>
-          <Text color="gray.600">Off day. Başka günden yükle:</Text>
+          <Text color={textSecondary}>Rest day. Load from another day:</Text>
           <HStack space={2} alignItems="center">
             <Button size="sm" variant="outline" onPress={loadDayPicker.onOpen}>
               {loadFromDay ? `From: ${loadFromDay}` : 'Select day'}
@@ -346,29 +379,56 @@ export default function WorkoutScreen() {
       )}
       {todayPlan && todayPlan.length > 0 ? (
         <VStack space={2}>
-          {todayPlan.map((ex: any, idx: number) => (
-            <VStack key={`${ex.name}-${idx}`} space={1}>
-              <HStack justifyContent="space-between" alignItems="center">
-                <VStack flex={1}>
-                  <Text fontWeight="semibold">{ex.name || 'Exercise'}</Text>
-                  <Text fontSize="xs" color="gray.500">{(ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0))} x {(ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0))}</Text>
-                </VStack>
-                <Text fontSize="sm" color="primary.600">Öneri: {targets[idx] != null ? `${targets[idx]} kg` : '-'}</Text>
-              </HStack>
-              {ex.weightBased !== false && (
-                <HStack alignItems="center" space={2}>
-                  <Text fontSize="xs" color="gray.600">Kilo:</Text>
-                  <Input
-                    flex={1}
-                    keyboardType="decimal-pad"
-                    placeholder={targets[idx] != null ? String(targets[idx]) : '0'}
-                    value={sessionWeights[idx] ?? ''}
-                    onChangeText={(t) => setSessionWeights((prev) => ({ ...prev, [idx]: t }))}
-                  />
+          {todayPlan.map((ex: any, idx: number) => {
+            const images = exerciseImages[ex.name] || [];
+            return (
+              <VStack key={`${ex.name}-${idx}`} space={1}>
+                <HStack justifyContent="space-between" alignItems="center">
+                  <VStack flex={1}>
+                    <Text fontWeight="semibold" color={textPrimary}>{ex.name || 'Exercise'}</Text>
+                    <Text fontSize="xs" color={textSecondary}>{(ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0))} x {(ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0))}</Text>
+                  </VStack>
+                  <Text fontSize="sm" color="primary.600">Suggested: {targets[idx] != null ? `${targets[idx]} kg` : '-'}</Text>
                 </HStack>
-              )}
-            </VStack>
-          ))}
+                {ex.weightBased !== false && (
+                  <HStack alignItems="center" space={2}>
+                    <Text fontSize="xs" color={textSecondary}>Weight:</Text>
+                    <Input
+                      flex={1}
+                      keyboardType="decimal-pad"
+                      placeholder={targets[idx] != null ? String(targets[idx]) : '0'}
+                      value={sessionWeights[idx] ?? ''}
+                      onChangeText={(t) => setSessionWeights((prev) => ({ ...prev, [idx]: t }))}
+                    />
+                  </HStack>
+                )}
+                {images.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                    <HStack space={2}>
+                      {images.map((img) => (
+                        <Pressable
+                          key={img._id}
+                          onPress={() => {
+                            setSelectedImage(img);
+                            setIsImageModalOpen(true);
+                          }}
+                        >
+                          <Image
+                            source={{ uri: img.uri }}
+                            alt={ex.name}
+                            width="100px"
+                            height="100px"
+                            borderRadius="md"
+                            resizeMode="cover"
+                          />
+                        </Pressable>
+                      ))}
+                    </HStack>
+                  </ScrollView>
+                )}
+              </VStack>
+            );
+          })}
         </VStack>
       ) : (
         <Text color="gray.500">No plan for this day.</Text>
@@ -381,7 +441,7 @@ export default function WorkoutScreen() {
       <VStack space={4} alignItems="center">
         <Icon as={Ionicons} name="fitness-outline" size="4xl" color="gray.400" />
         <VStack space={2} alignItems="center">
-          <Heading size="lg" color="gray.600">
+          <Heading size="lg" color={textSecondary}>
             No Workouts Yet
           </Heading>
           <Text fontSize="md" color="gray.500" textAlign="center">
@@ -401,26 +461,26 @@ export default function WorkoutScreen() {
 
   if (isLoading) {
     return (
-      <Box flex={1} bg="gray.50" safeArea>
+      <Box flex={1} bg={pageBg} safeArea>
         <Center flex={1}>
           <Spinner size="lg" color="primary.500" />
-          <Text mt={4} color="gray.600">Loading workouts...</Text>
+          <Text mt={4} color={textSecondary}>Loading workouts...</Text>
         </Center>
       </Box>
     );
   }
 
   return (
-    <Box flex={1} bg="gray.50" safeArea>
+    <Box flex={1} bg={pageBg} safeArea>
       {/* Header */}
-      <Box bg="white" px={4} py={3} borderBottomWidth={1} borderBottomColor="gray.200">
+      <Box bg={headerBg} px={4} py={3} borderBottomWidth={1} borderBottomColor={headerBorder}>
         <HStack justifyContent="space-between" alignItems="center">
           <VStack>
-            <Heading size={isNarrow ? 'md' : 'lg'} color="gray.800">
+            <Heading size={isNarrow ? 'md' : 'lg'} color={textPrimary}>
               Workouts
             </Heading>
             <HStack space={2} alignItems="center">
-              <Text fontSize="sm" color="gray.600">
+              <Text fontSize="sm" color={textSecondary}>
                 {workouts.length} workout{workouts.length !== 1 ? 's' : ''}
               </Text>
               {!isOnline && (
@@ -487,6 +547,28 @@ export default function WorkoutScreen() {
         contentInsetAdjustmentBehavior="always"
         showsVerticalScrollIndicator
       />
+
+      {/* Full Screen Single Image Modal */}
+      <Modal
+        isOpen={isImageModalOpen}
+        onClose={() => setIsImageModalOpen(false)}
+        size="full"
+      >
+        <Modal.Content>
+          <Modal.CloseButton />
+          {selectedImage && (
+            <Modal.Body>
+              <Image
+                source={{ uri: selectedImage.uri }}
+                alt={selectedImage.exerciseName}
+                width="100%"
+                height="400px"
+                resizeMode="contain"
+              />
+            </Modal.Body>
+          )}
+        </Modal.Content>
+      </Modal>
     </Box>
   );
 }

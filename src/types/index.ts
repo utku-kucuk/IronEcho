@@ -181,6 +181,8 @@ export type RootStackParamList = {
   WorkoutEntry: { workoutId?: string; presetPlan?: PresetExercise[]; date?: string; weekday?: string };
   MeasurementEntry: { measurementId?: string };
   WeeklyProgram?: undefined;
+  WorkoutDetail: { id: string };
+  ExerciseImagesManagement: undefined;
 };
 
 export type MainTabParamList = {
@@ -282,4 +284,14 @@ export interface LineChartData {
     strokeWidth?: number;
   }[];
   legend?: string[];
+}
+
+// Exercise Image Types
+export interface ExerciseImage {
+  _id: string;
+  exerciseName: string;
+  uri: string;
+  thumbnailUri?: string;
+  uploadedAt: Date;
+  userId: string;
 }

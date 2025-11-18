@@ -16,6 +16,8 @@ class ApiClient {
   private client: AxiosInstance;
   private baseURL: string;
   private tokens: AuthTokens | null = null;
+  // Prevent multiple simultaneous refresh calls that can trigger server rate limit (429)
+  private refreshPromise: Promise<AuthTokens> | null = null;
 
   constructor(baseURL: string = (process.env.EXPO_PUBLIC_API_URL as string) || 'http://localhost:3000/api') {
     this.baseURL = baseURL;
@@ -53,7 +55,13 @@ class ApiClient {
           originalRequest._retry = true;
 
           try {
-            await this.refreshToken();
+            // Use a single in-flight refresh for all pending requests
+            if (!this.refreshPromise) {
+              this.refreshPromise = this.refreshToken().finally(() => {
+                this.refreshPromise = null;
+              });
+            }
+            await this.refreshPromise;
             originalRequest.headers.Authorization = `Bearer ${this.tokens?.accessToken}`;
             return this.client(originalRequest);
           } catch (refreshError) {

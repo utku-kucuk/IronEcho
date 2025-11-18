@@ -1,6 +1,6 @@
 import Realm from 'realm';
 import { schemas, SCHEMA_VERSION } from './schemas';
-import { Workout, Measurement, User, SyncStatus } from '../types';
+import { Workout, Measurement, User, SyncStatus, ExerciseImage } from '../types';
 
 class RealmDatabase {
   private realm: Realm | null = null;
@@ -45,10 +45,14 @@ class RealmDatabase {
   }
 
   getRealm(): Realm {
-    if (!this.realm) {
+    if (!this.realm || !this.isInitialized) {
       throw new Error('Realm not initialized. Call initialize() first.');
     }
     return this.realm;
+  }
+
+  isRealmInitialized(): boolean {
+    return this.isInitialized && this.realm !== null;
   }
 
   // Workout operations
@@ -256,6 +260,73 @@ class RealmDatabase {
     }
   }
 
+  // ExerciseImage operations
+  createExerciseImage(image: Omit<ExerciseImage, '_id'>): ExerciseImage {
+    const realm = this.getRealm();
+    const id = this.generateId();
+    
+    realm.write(() => {
+      realm.create('ExerciseImage', {
+        _id: id,
+        ...image,
+        uploadedAt: new Date()
+      });
+    });
+
+    return this.getExerciseImageById(id)!;
+  }
+
+  getExerciseImageById(id: string): ExerciseImage | null {
+    const realm = this.getRealm();
+    const image = realm.objectForPrimaryKey('ExerciseImage', id);
+    return image ? this.realmToExerciseImage(image) : null;
+  }
+
+  getExerciseImages(exerciseName: string, userId: string): ExerciseImage[] {
+    const realm = this.getRealm();
+    const images = realm.objects('ExerciseImage')
+      .filtered('exerciseName == $0 AND userId == $1', exerciseName, userId)
+      .sorted('uploadedAt', true);
+    
+    return Array.from(images).map(image => this.realmToExerciseImage(image));
+  }
+
+  getAllExerciseImages(userId: string): ExerciseImage[] {
+    const realm = this.getRealm();
+    const images = realm.objects('ExerciseImage')
+      .filtered('userId == $0', userId)
+      .sorted('uploadedAt', true);
+    
+    return Array.from(images).map(image => this.realmToExerciseImage(image));
+  }
+
+  deleteExerciseImage(id: string): boolean {
+    const realm = this.getRealm();
+    const image = realm.objectForPrimaryKey('ExerciseImage', id);
+    
+    if (!image) return false;
+
+    realm.write(() => {
+      realm.delete(image);
+    });
+
+    return true;
+  }
+
+  deleteExerciseImages(exerciseName: string, userId: string): number {
+    const realm = this.getRealm();
+    const images = realm.objects('ExerciseImage')
+      .filtered('exerciseName == $0 AND userId == $1', exerciseName, userId);
+    
+    const count = images.length;
+    
+    realm.write(() => {
+      realm.delete(images);
+    });
+
+    return count;
+  }
+
   // Utility methods
   private generateId(): string {
     return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -321,6 +392,17 @@ class RealmDatabase {
       lastSync: realmStatus.lastSync,
       pendingCount: realmStatus.pendingCount,
       error: realmStatus.error
+    };
+  }
+
+  private realmToExerciseImage(realmImage: any): ExerciseImage {
+    return {
+      _id: realmImage._id,
+      exerciseName: realmImage.exerciseName,
+      uri: realmImage.uri,
+      thumbnailUri: realmImage.thumbnailUri,
+      uploadedAt: realmImage.uploadedAt,
+      userId: realmImage.userId
     };
   }
 

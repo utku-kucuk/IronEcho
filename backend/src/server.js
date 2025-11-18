@@ -36,10 +36,17 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // CORS configuration
-app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || "*",
+const corsOrigin =
+  (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test')
+    ? true // reflect request origin in dev/test
+    : (process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : "*");
+const corsOptions = {
+  origin: corsOrigin,
   credentials: true
-}));
+};
+app.use(cors(corsOptions));
+// Handle preflight requests
+app.options('*', cors(corsOptions));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));

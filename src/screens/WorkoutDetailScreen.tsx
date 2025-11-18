@@ -34,8 +34,11 @@ export default function WorkoutDetailScreen() {
     const ok = realmDB.deleteWorkout(workout._id);
     if (ok) {
       toast.show({ title: 'Deleted', description: 'Workout removed' });
-      // @ts-ignore
-      (navigation as any).goBack();
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        (navigation as any).navigate('Main');
+      }
     } else {
       toast.show({ title: 'Error', description: 'Could not delete workout' });
     }
@@ -53,7 +56,13 @@ export default function WorkoutDetailScreen() {
     <Box flex={1} bg="gray.50" safeArea>
       <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg="white" borderBottomWidth={1} borderBottomColor="gray.200">
         <HStack alignItems="center" space={2}>
-          <Button variant="ghost" onPress={() => (navigation as any).goBack()} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
+          <Button variant="ghost" onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              (navigation as any).navigate('Main');
+            }
+          }} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
           <Text fontSize="lg" fontWeight="bold">{formatDate(new Date(workout.date))}</Text>
         </HStack>
         <HStack space={2}>

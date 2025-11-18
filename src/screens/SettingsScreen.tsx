@@ -9,9 +9,12 @@ import {
   Icon,
   ScrollView,
   Button,
-  useToast
+  useToast,
+  Switch,
+  useColorMode
 } from 'native-base';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 
@@ -19,6 +22,8 @@ export default function SettingsScreen() {
   const { user, logout } = useAuth();
   const { isOnline, isSyncing, pendingCount, lastSync, startSync } = useSync();
   const toast = useToast();
+  const navigation = useNavigation();
+  const { colorMode, toggleColorMode } = useColorMode();
 
   const handleLogout = async () => {
     try {
@@ -40,8 +45,7 @@ export default function SettingsScreen() {
       await startSync();
       toast.show({
         title: 'Sync started',
-        description: 'Syncing your data...',
-        status: 'info'
+        description: 'Syncing your data...'
       });
     } catch (error) {
       toast.show({
@@ -61,14 +65,21 @@ export default function SettingsScreen() {
     }).format(date);
   };
 
+  const pageBg = colorMode === 'dark' ? 'gray.900' : 'gray.50';
+  const headerBg = colorMode === 'dark' ? 'gray.900' : 'white';
+  const cardBg = colorMode === 'dark' ? 'gray.800' : 'white';
+  const textPrimary = colorMode === 'dark' ? 'gray.100' : 'gray.800';
+  const textSecondary = colorMode === 'dark' ? 'gray.300' : 'gray.600';
+  const borderColor = colorMode === 'dark' ? 'gray.700' : 'gray.200';
+  const syncingColor = colorMode === 'dark' ? 'blue.300' : 'blue.600';
   return (
-    <Box flex={1} bg="gray.50" safeArea>
+    <Box flex={1} bg={pageBg} safeArea>
       {/* Header */}
-      <Box bg="white" px={6} py={4} borderBottomWidth={1} borderBottomColor="gray.200">
-        <Heading size="lg" color="gray.800">
+      <Box bg={headerBg} px={6} py={4} borderBottomWidth={1} borderBottomColor={borderColor}>
+        <Heading size="lg" color={textPrimary}>
           Settings
         </Heading>
-        <Text fontSize="sm" color="gray.600">
+        <Text fontSize="sm" color={textSecondary}>
           Manage your account and preferences
         </Text>
       </Box>
@@ -76,16 +87,29 @@ export default function SettingsScreen() {
       {/* Content */}
       <ScrollView flex={1}>
         <VStack space={4} p={6}>
+          {/* Appearance */}
+          <Box bg={cardBg} p={4} borderRadius="lg" shadow={1}>
+            <HStack alignItems="center" justifyContent="space-between">
+              <HStack space={3} alignItems="center">
+                <Icon as={Ionicons} name="moon" size="lg" color="purple.500" />
+                <VStack>
+                  <Text fontSize="lg" fontWeight="bold" color={textPrimary}>Appearance</Text>
+                  <Text fontSize="sm" color={textSecondary}>Dark Mode</Text>
+                </VStack>
+              </HStack>
+              <Switch isChecked={colorMode === 'dark'} onToggle={toggleColorMode} />
+            </HStack>
+          </Box>
           {/* User Info */}
-          <Box bg="white" p={4} borderRadius="lg" shadow={1}>
+          <Box bg={cardBg} p={4} borderRadius="lg" shadow={1}>
             <VStack space={3}>
               <HStack alignItems="center" space={3}>
                 <Icon as={Ionicons} name="person" size="lg" color="primary.500" />
                 <VStack flex={1}>
-                  <Text fontSize="lg" fontWeight="bold" color="gray.800">
+                  <Text fontSize="lg" fontWeight="bold" color={textPrimary}>
                     Profile
                   </Text>
-                  <Text fontSize="sm" color="gray.600">
+                  <Text fontSize="sm" color={textSecondary}>
                     {user?.email}
                   </Text>
                 </VStack>
@@ -94,20 +118,20 @@ export default function SettingsScreen() {
               {user?.profile && (
                 <VStack space={2} pl={12}>
                   <HStack justifyContent="space-between">
-                    <Text fontSize="sm" color="gray.600">Gender:</Text>
-                    <Text fontSize="sm" color="gray.800" textTransform="capitalize">
+                    <Text fontSize="sm" color={textSecondary}>Gender:</Text>
+                    <Text fontSize="sm" color={textPrimary} textTransform="capitalize">
                       {user.profile.gender}
                     </Text>
                   </HStack>
                   <HStack justifyContent="space-between">
-                    <Text fontSize="sm" color="gray.600">Units:</Text>
-                    <Text fontSize="sm" color="gray.800" textTransform="capitalize">
+                    <Text fontSize="sm" color={textSecondary}>Units:</Text>
+                    <Text fontSize="sm" color={textPrimary} textTransform="capitalize">
                       {user.profile.units}
                     </Text>
                   </HStack>
                   <HStack justifyContent="space-between">
-                    <Text fontSize="sm" color="gray.600">Language:</Text>
-                    <Text fontSize="sm" color="gray.800" textTransform="uppercase">
+                    <Text fontSize="sm" color={textSecondary}>Language:</Text>
+                    <Text fontSize="sm" color={textPrimary} textTransform="uppercase">
                       {user.profile.language}
                     </Text>
                   </HStack>
@@ -117,7 +141,7 @@ export default function SettingsScreen() {
           </Box>
 
           {/* Sync Status */}
-          <Box bg="white" p={4} borderRadius="lg" shadow={1}>
+          <Box bg={cardBg} p={4} borderRadius="lg" shadow={1}>
             <VStack space={3}>
               <HStack alignItems="center" space={3}>
                 <Icon 
@@ -127,10 +151,10 @@ export default function SettingsScreen() {
                   color={isOnline ? "green.500" : "orange.500"} 
                 />
                 <VStack flex={1}>
-                  <Text fontSize="lg" fontWeight="bold" color="gray.800">
+                  <Text fontSize="lg" fontWeight="bold" color={textPrimary}>
                     Sync Status
                   </Text>
-                  <Text fontSize="sm" color="gray.600">
+                  <Text fontSize="sm" color={textSecondary}>
                     {isOnline ? 'Online' : 'Offline'}
                   </Text>
                 </VStack>
@@ -138,20 +162,20 @@ export default function SettingsScreen() {
               
               <VStack space={2} pl={12}>
                 <HStack justifyContent="space-between">
-                  <Text fontSize="sm" color="gray.600">Last Sync:</Text>
-                  <Text fontSize="sm" color="gray.800">
+                  <Text fontSize="sm" color={textSecondary}>Last Sync:</Text>
+                  <Text fontSize="sm" color={textPrimary}>
                     {formatLastSync(lastSync)}
                   </Text>
                 </HStack>
                 <HStack justifyContent="space-between">
-                  <Text fontSize="sm" color="gray.600">Pending:</Text>
-                  <Text fontSize="sm" color="gray.800">
+                  <Text fontSize="sm" color={textSecondary}>Pending:</Text>
+                  <Text fontSize="sm" color={textPrimary}>
                     {pendingCount} items
                   </Text>
                 </HStack>
                 <HStack justifyContent="space-between">
-                  <Text fontSize="sm" color="gray.600">Status:</Text>
-                  <Text fontSize="sm" color={isSyncing ? "blue.600" : "gray.800"}>
+                  <Text fontSize="sm" color={textSecondary}>Status:</Text>
+                  <Text fontSize="sm" color={isSyncing ? syncingColor : textPrimary}>
                     {isSyncing ? 'Syncing...' : 'Idle'}
                   </Text>
                 </HStack>
@@ -173,36 +197,46 @@ export default function SettingsScreen() {
           </Box>
 
           {/* App Info */}
-          <Box bg="white" p={4} borderRadius="lg" shadow={1}>
+          <Box bg={cardBg} p={4} borderRadius="lg" shadow={1}>
             <VStack space={3}>
               <HStack alignItems="center" space={3}>
                 <Icon as={Ionicons} name="information-circle" size="lg" color="blue.500" />
                 <VStack flex={1}>
-                  <Text fontSize="lg" fontWeight="bold" color="gray.800">
+                  <Text fontSize="lg" fontWeight="bold" color={textPrimary}>
                     App Information
                   </Text>
-                  <Text fontSize="sm" color="gray.600">
+                  <Text fontSize="sm" color={textSecondary}>
                     IronEcho v1.0.0
                   </Text>
                 </VStack>
               </HStack>
               
               <VStack space={2} pl={12}>
-                <Text fontSize="sm" color="gray.600">
+                <Text fontSize="sm" color={textSecondary}>
                   • 100% Offline-first design
                 </Text>
-                <Text fontSize="sm" color="gray.600">
+                <Text fontSize="sm" color={textSecondary}>
                   • Automatic sync when online
                 </Text>
-                <Text fontSize="sm" color="gray.600">
+                <Text fontSize="sm" color={textSecondary}>
                   • Self-hosted backend support
                 </Text>
-                <Text fontSize="sm" color="gray.600">
+                <Text fontSize="sm" color={textSecondary}>
                   • Progressive overload tracking
                 </Text>
               </VStack>
             </VStack>
           </Box>
+
+          {/* Exercise Images */}
+          <Button
+            size="lg"
+            variant="outline"
+            onPress={() => (navigation as any).navigate('ExerciseImagesManagement')}
+            leftIcon={<Icon as={Ionicons} name="images" size="sm" />}
+          >
+            Exercise Images
+          </Button>
 
           {/* Logout */}
           <Button

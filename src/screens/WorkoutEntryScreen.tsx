@@ -13,7 +13,10 @@ import {
   FormControl,
   Select,
   CheckIcon,
-  Modal
+  Modal,
+  Image,
+  ScrollView,
+  useColorMode,
 } from 'native-base';
 import { FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,7 +25,8 @@ import { realmDB } from '../database/realm';
 import { saveDailyOverride, getTodaysProgram, DEFAULT_WEEKLY_PROGRAM, ProgramExerciseTemplate } from '../services/weeklyProgram';
 import { getCatalog, addExerciseName } from '../services/exerciseCatalog';
 import { useAuth } from '../context/AuthContext';
-import { PresetExercise } from '../types';
+import { PresetExercise, ExerciseImage } from '../types';
+import { ExerciseImageService } from '../services/exerciseImageService';
 
 type ExerciseSetForm = { reps: string; weight: string };
 type ExerciseForm = {
@@ -33,6 +37,8 @@ type ExerciseForm = {
   sets: ExerciseSetForm[];
   setsCount?: number; // schema mode
   repsCount?: string; // schema mode
+  uniformWeight?: string; // edit mode: one weight applied to all sets
+  restMin?: number; // default rest between sets in minutes (schema)
 };
 
 export default function WorkoutEntryScreen() {
@@ -40,6 +46,16 @@ export default function WorkoutEntryScreen() {
   const route = useRoute<any>();
   const { user } = useAuth();
   const toast = useToast();
+  const { colorMode } = useColorMode();
+  const pageBg = colorMode === 'dark' ? 'gray.900' : 'gray.50';
+  const headerBg = colorMode === 'dark' ? 'gray.900' : 'white';
+  const cardBg = colorMode === 'dark' ? 'gray.800' : 'white';
+  const textPrimary = colorMode === 'dark' ? 'gray.100' : 'gray.800';
+  const textSecondary = colorMode === 'dark' ? 'gray.300' : 'gray.600';
+  const inputBg = colorMode === 'dark' ? 'gray.800' : 'white';
+  const inputText = colorMode === 'dark' ? 'gray.100' : 'gray.800';
+  const inputPlaceholder = colorMode === 'dark' ? 'gray.400' : 'gray.500';
+  const borderColor = colorMode === 'dark' ? 'gray.700' : 'gray.200';
 
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
   // Date parts for selectable UI
@@ -66,10 +82,13 @@ export default function WorkoutEntryScreen() {
     { name: 'bodyweight', weightBased: false },
     { name: 'cardio', weightBased: false }
   ]);
+  const [exerciseGroupMap, setExerciseGroupMap] = useState<Record<string, string>>({});
+  const [exerciseProfileMap, setExerciseProfileMap] = useState<Record<string, { group?: string; type?: string; restMin?: number; weightBased?: boolean }>>({});
   const [isAddExerciseOpen, setIsAddExerciseOpen] = useState<boolean>(false);
   const [newExerciseName, setNewExerciseName] = useState<string>('');
   const [targetExerciseIndex, setTargetExerciseIndex] = useState<number | null>(null);
   // Removed add-group/type; only exercise add remains
+  const [exerciseImagesByExercise, setExerciseImagesByExercise] = useState<Record<string, ExerciseImage[]>>({});
 
   const addExercise = () => {
     setExercises(prev => [...prev, { name: '', muscleGroup: 'other', type: 'strength', weightBased: true, sets: [{ reps: '', weight: '' }] }]);
@@ -83,8 +102,60 @@ export default function WorkoutEntryScreen() {
     setExercises(prev => prev.map((ex, i) => i === exIdx ? { ...ex, sets: [...ex.sets, { reps: '', weight: '' }] } : ex));
   };
 
+  const removeSet = (exIdx: number, setIdx: number) => {
+    setExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
+      const nextSets = ex.sets.filter((_, si) => si !== setIdx);
+      return { ...ex, sets: nextSets.length > 0 ? nextSets : [{ reps: '', weight: '' }] };
+    }));
+  };
+
+  const changeSetsCount = (exIdx: number, nextCount: number) => {
+    setExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
+      const count = Math.max(1, Math.min(50, nextCount || 1));
+      if (ex.sets.length === count) return ex;
+      const nextSets: ExerciseSetForm[] = Array.from({ length: count }).map((_, idx) => ex.sets[idx] ?? { reps: '', weight: '' });
+      return { ...ex, sets: nextSets };
+    }));
+  };
+
   const updateExercise = (idx: number, field: keyof ExerciseForm, value: any) => {
-    setExercises(prev => prev.map((ex, i) => i === idx ? { ...ex, [field]: value } : ex));
+    setExercises(prev =>
+      prev.map((ex, i) => {
+        if (i !== idx) return ex;
+        const next: any = { ...ex, [field]: value };
+        if (field === 'name') {
+          const def = (exerciseGroupMap || {})[value];
+          if (def) { next.muscleGroup = def; }
+          const prof = (exerciseProfileMap || {})[value] || {};
+          if (prof.group) { next.muscleGroup = prof.group; }
+          if (prof.type) {
+            next.type = prof.type as any;
+          }
+          if (prof.weightBased != null) {
+            next.weightBased = !!prof.weightBased;
+          } else if (prof.type) {
+            const t = exerciseTypes.find(t => t.name === prof.type);
+            if (t) { next.weightBased = t.weightBased; }
+          }
+          if (prof.restMin != null) { next.restMin = prof.restMin; }
+        }
+        // If editing an existing workout, keep sets in sync with aggregated inputs
+        if (editWorkoutId) {
+          const setsCount = field === 'setsCount' ? (parseInt(String(value), 10) || 1) : (next.setsCount ?? next.sets?.length ?? 1);
+          const repsCount = field === 'repsCount' ? String(value) : (next.repsCount ?? (next.sets?.[0]?.reps || ''));
+          const uniformWeight = field === 'uniformWeight' ? String(value) : (next.uniformWeight ?? (next.sets?.[0]?.weight || ''));
+          const count = Math.max(1, Math.min(50, setsCount || 1));
+          const newSets: ExerciseSetForm[] = Array.from({ length: count }).map((_, sIdx) => ({
+            reps: repsCount || '',
+            weight: next.weightBased ? (uniformWeight || '') : ''
+          }));
+          next.sets = newSets;
+        }
+        return next;
+      })
+    );
   };
 
   const updateSet = (exIdx: number, setIdx: number, field: keyof ExerciseSetForm, value: string) => {
@@ -140,6 +211,8 @@ export default function WorkoutEntryScreen() {
         setExerciseOptions(cat.exercises);
         setMuscleGroups(cat.muscleGroups);
         setExerciseTypes(cat.types);
+        setExerciseGroupMap((cat as any).exerciseGroups || {});
+        setExerciseProfileMap((cat as any).exerciseProfiles || {});
         const editId: string | undefined = route.params?.editWorkoutId;
         if (editId) {
           const existing = realmDB.getWorkoutById(editId);
@@ -169,8 +242,9 @@ export default function WorkoutEntryScreen() {
               muscleGroup: p.muscleGroup,
               type: p.type,
               weightBased: p.weightBased,
+              uniformWeight: p.defaultWeight != null ? String(p.defaultWeight) : '',
               sets: (p.setsCount && p.repsCount)
-                ? Array.from({ length: p.setsCount }).map(() => ({ reps: String(p.repsCount), weight: '' }))
+                ? Array.from({ length: p.setsCount }).map(() => ({ reps: String(p.repsCount), weight: p.defaultWeight != null ? String(p.defaultWeight) : '' }))
                 : (p.defaultSets && p.defaultSets.length > 0)
                   ? p.defaultSets.map((s: any) => ({ reps: String(s.reps), weight: '' }))
                   : [{ reps: '', weight: '' }]
@@ -186,6 +260,25 @@ export default function WorkoutEntryScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load exercise images for selected exercise names
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const names = Array.from(new Set(exercises.map(e => e.name).filter(Boolean)));
+      const map: Record<string, ExerciseImage[]> = {};
+      names.forEach(name => {
+        try {
+          map[name] = ExerciseImageService.getExerciseImages(name, user._id);
+        } catch {
+          map[name] = [];
+        }
+      });
+      setExerciseImagesByExercise(map);
+    } catch {
+      // ignore
+    }
+  }, [exercises, user]);
 
   // Compute per-exercise target weight based on same weekday and exact scheme; apply level bump; show under inputs
   useEffect(() => {
@@ -299,7 +392,9 @@ export default function WorkoutEntryScreen() {
         type: e.type,
         weightBased: e.weightBased,
         setsCount: e.setsCount ?? e.sets.length,
-        repsCount: e.repsCount ? parseInt(e.repsCount, 10) : (e.sets[0]?.reps ? parseInt(e.sets[0].reps, 10) : 0)
+        repsCount: e.repsCount ? parseInt(e.repsCount, 10) : (e.sets[0]?.reps ? parseInt(e.sets[0].reps, 10) : 0),
+        restMin: e.restMin
+        , defaultWeight: e.uniformWeight ? parseFloat(e.uniformWeight) : undefined
       }));
       await saveDailyOverride(user._id, dateISO, plan);
       if (navigation.canGoBack()) {
@@ -313,8 +408,8 @@ export default function WorkoutEntryScreen() {
   };
 
   return (
-    <Box flex={1} bg="gray.50" safeArea>
-      <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg="white" borderBottomWidth={1} borderBottomColor="gray.200">
+    <Box flex={1} bg={pageBg} safeArea>
+      <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg={headerBg} borderBottomWidth={1} borderBottomColor={borderColor}>
         <HStack alignItems="center" space={2}>
           <Button variant="ghost" onPress={() => {
             if (navigation.canGoBack()) {
@@ -323,7 +418,7 @@ export default function WorkoutEntryScreen() {
               (navigation as any).navigate('Main');
             }
           }} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
-          <Text fontSize="lg" fontWeight="bold">New Workout</Text>
+          <Text fontSize="lg" fontWeight="bold" color={textPrimary}>New Workout</Text>
         </HStack>
         <Button colorScheme="primary" onPress={editWorkoutId ? saveWorkout : saveSchemaOverride} leftIcon={<Icon as={Ionicons} name="save" />}>Save</Button>
       </HStack>
@@ -334,8 +429,8 @@ export default function WorkoutEntryScreen() {
         keyExtractor={(_, idx) => `exercise-${idx}`}
         contentContainerStyle={{ padding: 16, paddingBottom: 160 }}
         ListHeaderComponent={(
-          <VStack space={2} bg="white" p={4} borderRadius="lg" shadow={1}>
-            <Text fontWeight="semibold">Date</Text>
+          <VStack space={2} bg={cardBg} p={4} borderRadius="lg" shadow={1}>
+            <Text fontWeight="semibold" color={textPrimary}>Date</Text>
             <HStack space={2}>
               <FormControl flex={1}>
                 <FormControl.Label>Year</FormControl.Label>
@@ -388,14 +483,23 @@ export default function WorkoutEntryScreen() {
             </HStack>
             <FormControl mt={2}>
               <FormControl.Label>Notes</FormControl.Label>
-              <Input value={notes} onChangeText={setNotes} placeholder="Optional notes" />
+              <Input
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Optional notes"
+                bg={inputBg}
+                color={inputText}
+                placeholderTextColor={inputPlaceholder}
+                borderColor={borderColor}
+                _focus={{ borderColor: 'primary.500' }}
+              />
             </FormControl>
           </VStack>
         )}
         renderItem={({ item: ex, index: idx }) => (
-          <VStack key={idx} space={3} bg="white" p={4} borderRadius="lg" shadow={1} mt={4}>
+          <VStack key={idx} space={3} bg={cardBg} p={4} borderRadius="lg" shadow={1} mt={4}>
             <HStack justifyContent="space-between" alignItems="center">
-              <Text fontWeight="semibold">Exercise {idx + 1}</Text>
+              <Text fontWeight="semibold" color={textPrimary}>Exercise {idx + 1}</Text>
               <Button variant="outline" size="sm" colorScheme="red" onPress={() => removeExercise(idx)} leftIcon={<Icon as={Ionicons} name="trash" />}>Remove</Button>
             </HStack>
             <HStack space={2} alignItems="flex-end">
@@ -451,6 +555,29 @@ export default function WorkoutEntryScreen() {
                 </Select>
               </FormControl>
             </HStack>
+            {exerciseImagesByExercise[ex.name] && exerciseImagesByExercise[ex.name].length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                <HStack space={2}>
+                  {exerciseImagesByExercise[ex.name].map((img) => (
+                    <Box
+                      key={img._id}
+                      bg={cardBg}
+                      borderRadius="md"
+                      overflow="hidden"
+                      shadow={1}
+                    >
+                      <Image
+                        source={{ uri: img.uri }}
+                        alt={ex.name}
+                        width="80px"
+                        height="80px"
+                        resizeMode="cover"
+                      />
+                    </Box>
+                  ))}
+                </HStack>
+              </ScrollView>
+            )}
             <HStack space={2} alignItems="flex-end">
               <FormControl flex={1}>
                 <FormControl.Label>Weight-based</FormControl.Label>
@@ -466,54 +593,83 @@ export default function WorkoutEntryScreen() {
               </FormControl>
             </HStack>
             <Divider />
-            {/* Schema mode (no weights): sets & reps numeric */}
+            {/* Schema mode (no weights): sets & reps numeric - kg removed from schema mode */}
             {!editWorkoutId ? (
-              <HStack space={2}>
-                <FormControl flex={1}>
-                  <FormControl.Label>Sets</FormControl.Label>
-                  <Input keyboardType="number-pad" value={String(ex.setsCount ?? ex.sets.length)} onChangeText={t => {
-                    const val = parseInt(t.replace(/[^0-9]/g, ''), 10) || 0;
-                    updateExercise(idx, 'setsCount' as any, val as any);
-                  }} />
-                </FormControl>
-                <FormControl flex={1}>
-                  <FormControl.Label>Reps</FormControl.Label>
-                  <Input keyboardType="number-pad" value={String(ex.repsCount ?? (ex.sets[0]?.reps || ''))} onChangeText={t => updateExercise(idx, 'repsCount' as any, t as any)} />
-                </FormControl>
-              </HStack>
+              <VStack space={2}>
+                <HStack space={2}>
+                  <FormControl flex={1}>
+                    <FormControl.Label>Sets</FormControl.Label>
+                    <Input keyboardType="number-pad" value={String(ex.setsCount ?? ex.sets.length)} onChangeText={t => {
+                      const val = parseInt(t.replace(/[^0-9]/g, ''), 10) || 0;
+                      updateExercise(idx, 'setsCount' as any, val as any);
+                    }} />
+                  </FormControl>
+                  <FormControl flex={1}>
+                    <FormControl.Label>Reps</FormControl.Label>
+                    <Input keyboardType="number-pad" value={String(ex.repsCount ?? (ex.sets[0]?.reps || ''))} onChangeText={t => updateExercise(idx, 'repsCount' as any, t as any)} />
+                  </FormControl>
+                </HStack>
+                {/* Weight input removed from schema mode - only shown in edit mode for existing workouts */}
+              </VStack>
             ) : (
               <VStack space={2}>
-                {ex.sets.map((s, si) => (
-                  <VStack key={si} space={2}>
-                    <HStack space={2}>
-                      <FormControl flex={1}>
-                        <FormControl.Label>Reps</FormControl.Label>
-                        <Select
-                          selectedValue={s.reps}
-                          placeholder="Reps"
-                          _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
-                          onValueChange={value => updateSet(idx, si, 'reps', value)}
-                        >
-                          {repOptions.map(r => (
-                            <Select.Item key={`rep-${idx}-${si}-${r}`} label={r} value={r} />
-                          ))}
-                        </Select>
-                      </FormControl>
-                      {ex.weightBased && (
-                        <FormControl flex={1}>
-                          <FormControl.Label>Weight</FormControl.Label>
-                          <Input
-                            keyboardType="decimal-pad"
-                            placeholder="Weight"
-                            value={s.weight}
-                            onChangeText={t => updateSet(idx, si, 'weight', sanitizeDecimal(t))}
-                          />
-                        </FormControl>
-                      )}
-                    </HStack>
-                  </VStack>
-                ))}
-                <Button variant="outline" onPress={() => addSet(idx)} leftIcon={<Icon as={Ionicons} name="add" />}>Add Set</Button>
+                <FormControl>
+                  <FormControl.Label>Set rest (min)</FormControl.Label>
+                  <Input
+                    keyboardType="decimal-pad"
+                    value={ex.restMin != null ? String(ex.restMin) : ''}
+                    onChangeText={t => updateExercise(idx, 'restMin' as any, parseFloat(t.replace(/[^0-9.]/g, '')) || 0)}
+                    bg={inputBg}
+                    color={textPrimary}
+                    placeholderTextColor={inputPlaceholder}
+                    borderColor={borderColor}
+                    _focus={{ borderColor: 'primary.500' }}
+                  />
+                </FormControl>
+                <HStack space={2}>
+                  <FormControl flex={1}>
+                    <FormControl.Label>Sets</FormControl.Label>
+                    <Input
+                      keyboardType="number-pad"
+                      value={String(ex.setsCount ?? ex.sets.length)}
+                      onChangeText={t => updateExercise(idx, 'setsCount' as any, parseInt(t.replace(/[^0-9]/g, ''), 10) || 1)}
+                      bg={inputBg}
+                      color={inputText}
+                      placeholderTextColor={inputPlaceholder}
+                      borderColor={borderColor}
+                      _focus={{ borderColor: 'primary.500' }}
+                    />
+                  </FormControl>
+                  <FormControl flex={1}>
+                    <FormControl.Label>Reps</FormControl.Label>
+                    <Input
+                      keyboardType="number-pad"
+                      value={String(ex.repsCount ?? (ex.sets[0]?.reps || ''))}
+                      onChangeText={t => updateExercise(idx, 'repsCount' as any, t.replace(/[^0-9]/g, ''))}
+                      bg={inputBg}
+                      color={inputText}
+                      placeholderTextColor={inputPlaceholder}
+                      borderColor={borderColor}
+                      _focus={{ borderColor: 'primary.500' }}
+                    />
+                  </FormControl>
+                </HStack>
+                {ex.weightBased && (
+                  <FormControl>
+                    <FormControl.Label>Weight (kg)</FormControl.Label>
+                    <Input
+                      keyboardType="decimal-pad"
+                      value={String(ex.uniformWeight ?? (ex.sets[0]?.weight || ''))}
+                      onChangeText={t => updateExercise(idx, 'uniformWeight' as any, sanitizeDecimal(t))}
+                      bg={inputBg}
+                      color={inputText}
+                      placeholderTextColor={inputPlaceholder}
+                      borderColor={borderColor}
+                      _focus={{ borderColor: 'primary.500' }}
+                    />
+                  </FormControl>
+                )}
+                {/* Note: all sets will use the same reps/weight values above */}
               </VStack>
             )}
           </VStack>

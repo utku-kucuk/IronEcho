@@ -327,6 +327,20 @@ class RealmDatabase {
     return count;
   }
 
+  reassignExerciseImages(oldName: string, newName: string, userId: string): number {
+    const realm = this.getRealm();
+    const images = realm.objects('ExerciseImage')
+      .filtered('exerciseName == $0 AND userId == $1', oldName, userId);
+    let count = 0;
+    realm.write(() => {
+      for (const img of images) {
+        (img as any).exerciseName = newName;
+        count++;
+      }
+    });
+    return count;
+  }
+
   // Utility methods
   private generateId(): string {
     return Date.now().toString() + Math.random().toString(36).substr(2, 9);

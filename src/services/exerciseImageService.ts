@@ -132,5 +132,30 @@ export class ExerciseImageService {
       return 0;
     }
   }
+
+  /**
+   * Reassign all images from one exercise name to another
+   */
+  static async renameExercise(oldName: string, newName: string, userId: string): Promise<number> {
+    try {
+      // @ts-ignore
+      if ((realmDB as any).reassignExerciseImages) {
+        // @ts-ignore
+        return (realmDB as any).reassignExerciseImages(oldName, newName, userId);
+      }
+      // Fallback: fetch and re-create (not ideal for web stub)
+      const images = this.getExerciseImages(oldName, userId);
+      let count = 0;
+      for (const img of images) {
+        await this.deleteExerciseImage(img._id);
+        await this.saveExerciseImage(newName, img.uri, userId);
+        count++;
+      }
+      return count;
+    } catch (e) {
+      console.error('Error reassigning exercise images:', e);
+      return 0;
+    }
+  }
 }
 

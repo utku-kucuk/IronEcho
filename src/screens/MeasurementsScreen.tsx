@@ -68,9 +68,9 @@ export default function MeasurementsScreen() {
   return (
     <Box flex={1} bg={pageBg} safeArea>
       {/* Header */}
-      <Box bg={headerBg} px={6} py={4} borderBottomWidth={1} borderBottomColor={useColorModeValue('gray.200','gray.700')}>
-        <HStack justifyContent="space-between" alignItems="center">
-          <VStack>
+      <Box bg={headerBg} pl={6} pr={8} py={4} borderBottomWidth={1} borderBottomColor={useColorModeValue('gray.200','gray.700')}>
+        <HStack justifyContent="flex-start" alignItems="center">
+          <VStack flex={1}>
             <Heading size="lg" color="gray.800">
               Measurements
             </Heading>
@@ -78,9 +78,11 @@ export default function MeasurementsScreen() {
               Track your body measurements and progress photos
             </Text>
           </VStack>
-          <Button mr={2} size="sm" colorScheme="primary" leftIcon={<Icon as={Ionicons} name="add" size="sm" />} onPress={() => (navigation as any).navigate('MeasurementEntry' as never)}>
+          <HStack flexShrink={0} justifyContent="flex-end">
+          <Button size="sm" colorScheme="primary" leftIcon={<Icon as={Ionicons} name="add" size="sm" />} onPress={() => (navigation as any).navigate('MeasurementEntry' as never)}>
             New
           </Button>
+          </HStack>
         </HStack>
       </Box>
 

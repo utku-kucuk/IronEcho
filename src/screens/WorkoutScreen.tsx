@@ -36,6 +36,8 @@ import { ExerciseImageService } from '../services/exerciseImageService';
 export default function WorkoutScreen() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
+  const [dateFilter, setDateFilter] = useState<'all' | '30d' | '90d' | 'ytd'>('all');
   const [selectedDay, setSelectedDay] = useState<Weekday>(() => getTodayKey());
   const [todayPlan, setTodayPlan] = useState<any[]>([]);
   const [targets, setTargets] = useState<Record<number, number | null>>({});
@@ -62,6 +64,7 @@ export default function WorkoutScreen() {
   const textPrimary = useColorModeValue('gray.800', 'gray.100');
   const textSecondary = useColorModeValue('gray.600', 'gray.300');
   const headerBorder = useColorModeValue('gray.200', 'gray.700');
+  const dashedBorderColor = useColorModeValue('gray.300', 'gray.600');
 
   useEffect(() => {
     loadWorkouts();
@@ -124,6 +127,7 @@ export default function WorkoutScreen() {
   };
 
   // Calculate target weights function - takes level as parameter to ensure immediate update
+  // Now uses entered weights (sessionWeights) when available, otherwise falls back to history
   const calculateTargetsWithLevel = useCallback((currentLevel: 'beginner' | 'intermediate' | 'advanced') => {
     if (!user || !todayPlan || todayPlan.length === 0) return;
     // Use all sessions (not only same weekday) to better reflect real progression
@@ -134,6 +138,25 @@ export default function WorkoutScreen() {
       const setsCount = ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0);
       const repsCount = ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0);
 
+      // Check if user has entered a weight for this exercise
+      const enteredWeightStr = sessionWeights[idx];
+      const enteredWeight = enteredWeightStr ? parseFloat(enteredWeightStr) : null;
+
+      // Fixed mid-range multipliers per level (beginner 7.5%, intermediate 4%, advanced 2.5%)
+      const percent = currentLevel === 'beginner' ? 0.075
+        : currentLevel === 'intermediate' ? 0.04
+        : 0.025;
+
+      // If user entered a weight, calculate suggestion based on that weight and level
+      if (enteredWeight != null && !isNaN(enteredWeight) && enteredWeight > 0) {
+        let bumped = enteredWeight * (1 + percent);
+        if (bumped - enteredWeight < 0.5) bumped = enteredWeight + 0.5; // ensure visible progress
+        const suggested = Math.max(bumped, enteredWeight);
+        nextTargets[idx] = Number((Math.round(suggested * 10) / 10).toFixed(1));
+        return;
+      }
+
+      // Otherwise, use historical data
       // Build history from recent workouts for the same exercise and scheme
       const history: Array<{ date: Date; avg: number }> = [];
       for (const w of all) {
@@ -166,11 +189,6 @@ export default function WorkoutScreen() {
       const baseAvg = recent.reduce((s, h) => s + h.avg, 0) / recent.length;
       if (!baseAvg || baseAvg <= 0 || isNaN(baseAvg)) { nextTargets[idx] = null; return; }
 
-      // Fixed mid-range multipliers per level (beginner 7.5%, intermediate 4%, advanced 2.5%)
-      const percent = currentLevel === 'beginner' ? 0.075
-        : currentLevel === 'intermediate' ? 0.04
-        : 0.025;
-
       let bumped = baseAvg * (1 + percent);
       if (bumped - baseAvg < 0.5) bumped = baseAvg + 0.5; // ensure visible progress
 
@@ -179,14 +197,14 @@ export default function WorkoutScreen() {
     });
 
     setTargets(nextTargets);
-  }, [todayPlan, user]);
+  }, [todayPlan, user, sessionWeights]);
 
-  // Calculate targets when dependencies change
+  // Calculate targets when dependencies change (including when weights are entered)
   useEffect(() => {
     if (user && todayPlan && todayPlan.length > 0) {
       calculateTargetsWithLevel(level);
     }
-  }, [todayPlan, selectedDay, user, level, calculateTargetsWithLevel]);
+  }, [todayPlan, selectedDay, user, level, sessionWeights, calculateTargetsWithLevel]);
 
   const saveTodayAsWorkout = () => {
     try {
@@ -258,7 +276,27 @@ export default function WorkoutScreen() {
     }, 0);
   };
 
-  const renderWorkoutItem = ({ item }: { item: Workout }) => (
+  const renderWorkoutItem = ({ item }: { item: any }) => (
+    item && item._id === 'show_more'
+    ? (
+      <Pressable onPress={() => (navigation as any).navigate('WorkoutHistory' as never)}>
+        <Box
+          bg={cardBg}
+          p={4}
+          borderRadius="lg"
+          mb={3}
+          borderWidth={2}
+          borderStyle="dashed"
+          borderColor={dashedBorderColor}
+          alignItems="center"
+          justifyContent="center"
+        >
+          <Icon as={Ionicons} name="add" size="xl" color="primary.500" />
+          <Text mt={2} color={textSecondary}>Show all workouts</Text>
+        </Box>
+      </Pressable>
+    )
+    : (
     <Pressable onPress={() => {(navigation as any).navigate('WorkoutDetail' as never, { id: item._id } as never)}}>
       <Box
         bg={cardBg}
@@ -309,7 +347,7 @@ export default function WorkoutScreen() {
         </VStack>
       </Box>
     </Pressable>
-  );
+  ));
 
   const renderTodayPlan = () => (
     <VStack space={3} bg={cardBg} p={4} borderRadius="lg" shadow={1} mb={4}>
@@ -390,18 +428,30 @@ export default function WorkoutScreen() {
                   </VStack>
                   <Text fontSize="sm" color="primary.600">Suggested: {targets[idx] != null ? `${targets[idx]} kg` : '-'}</Text>
                 </HStack>
-                {ex.weightBased !== false && (
-                  <HStack alignItems="center" space={2}>
-                    <Text fontSize="xs" color={textSecondary}>Weight:</Text>
-                    <Input
-                      flex={1}
-                      keyboardType="decimal-pad"
-                      placeholder={targets[idx] != null ? String(targets[idx]) : '0'}
-                      value={sessionWeights[idx] ?? ''}
-                      onChangeText={(t) => setSessionWeights((prev) => ({ ...prev, [idx]: t }))}
-                    />
-                  </HStack>
-                )}
+                {(() => {
+                  // Show weight input if weightBased is true, or if it's undefined/null and type is strength
+                  const shouldShowWeight = ex.weightBased === true || 
+                    (ex.weightBased !== false && (ex.type === 'strength' || ex.type === undefined || ex.type === null));
+                  return shouldShowWeight ? (
+                    <HStack alignItems="center" space={2}>
+                      <Text fontSize="xs" color={textSecondary}>Weight (kg):</Text>
+                      <Input
+                        flex={1}
+                        keyboardType="decimal-pad"
+                        placeholder={targets[idx] != null ? String(targets[idx]) : '0'}
+                        value={sessionWeights[idx] ?? ''}
+                        onChangeText={(t) => {
+                          // Update the weight
+                          setSessionWeights((prev) => ({ ...prev, [idx]: t }));
+                          // Recalculate suggestions immediately when weight is entered
+                          // This will be handled by the useEffect that watches sessionWeights
+                        }}
+                        bg={cardBg}
+                        borderColor={dashedBorderColor}
+                      />
+                    </HStack>
+                  ) : null;
+                })()}
                 {images.length > 0 && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
                     <HStack space={2}>
@@ -470,6 +520,33 @@ export default function WorkoutScreen() {
     );
   }
 
+  // Apply date filter when showing all
+  const getFilteredWorkouts = (): Workout[] => {
+    if (!showAll) return workouts.slice(0, 6);
+    if (dateFilter === 'all') return workouts;
+    const now = new Date();
+    let from = new Date(0);
+    if (dateFilter === '30d') {
+      from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else if (dateFilter === '90d') {
+      from = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    } else if (dateFilter === 'ytd') {
+      from = new Date(now.getFullYear(), 0, 1);
+    }
+    return workouts.filter(w => new Date(w.date) >= from);
+  };
+
+  const listData: any[] = (() => {
+    if (!showAll) {
+      const preview = workouts.slice(0, 6);
+      if (workouts.length > 6) {
+        return [...preview, { _id: 'show_more' }];
+      }
+      return preview;
+    }
+    return getFilteredWorkouts();
+  })();
+
   return (
     <Box flex={1} bg={pageBg} safeArea>
       {/* Header */}
@@ -525,12 +602,21 @@ export default function WorkoutScreen() {
             )}
           </HStack>
         </HStack>
+        {showAll && (
+          <HStack mt={2} space={2}>
+            <Button size="xs" variant={dateFilter==='all'?'solid':'outline'} onPress={() => setDateFilter('all')}>All</Button>
+            <Button size="xs" variant={dateFilter==='30d'?'solid':'outline'} onPress={() => setDateFilter('30d')}>30d</Button>
+            <Button size="xs" variant={dateFilter==='90d'?'solid':'outline'} onPress={() => setDateFilter('90d')}>90d</Button>
+            <Button size="xs" variant={dateFilter==='ytd'?'solid':'outline'} onPress={() => setDateFilter('ytd')}>YTD</Button>
+            <Button size="xs" variant="ghost" onPress={() => setShowAll(false)} leftIcon={<Icon as={Ionicons} name="close" />}>Close</Button>
+          </HStack>
+        )}
       </Box>
 
       <FlatList
         style={{ flex: 1 }}
-        data={workouts}
-        keyExtractor={(item: any) => String(item._id)}
+        data={listData}
+        keyExtractor={(item: any, index: number) => String(item?._id ?? `i-${index}`)}
         renderItem={renderWorkoutItem}
         ListHeaderComponent={() => (
           <VStack>

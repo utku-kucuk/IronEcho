@@ -28,6 +28,7 @@ export default function WeeklyProgramScreen() {
   const [exerciseToDelete, setExerciseToDelete] = useState<string | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const cancelRef = React.useRef(null);
+  const [exerciseProfileMap, setExerciseProfileMap] = useState<Record<string, { group?: string; type?: string; restMin?: number; weightBased?: boolean }>>({});
 
   useEffect(() => {
     (async () => {
@@ -36,6 +37,7 @@ export default function WeeklyProgramScreen() {
       if (existing) setProgram(existing);
       const catalog = await getCatalog(user._id);
       setExerciseOptions(catalog.exercises);
+      setExerciseProfileMap((catalog as any).exerciseProfiles || {});
       loadExerciseImages();
     })();
   }, [user]);
@@ -59,7 +61,23 @@ export default function WeeklyProgramScreen() {
   };
 
   const updateExercise = (idx: number, field: keyof ProgramExerciseTemplate, value: any) => {
-    setDayPlan({ ...dayPlan, exercises: dayPlan.exercises.map((ex: any, i: number) => (i === idx ? { ...ex, [field]: value } : ex)) });
+    setDayPlan({
+      ...dayPlan,
+      exercises: dayPlan.exercises.map((ex: any, i: number) => {
+        if (i !== idx) return ex;
+        const next: any = { ...ex, [field]: value };
+        if (field === 'name') {
+          const prof = (exerciseProfileMap || {})[value as string] || {};
+          if (prof.group) next.muscleGroup = prof.group;
+          if (prof.type) {
+            next.type = prof.type as any;
+            next.weightBased = prof.weightBased != null ? prof.weightBased : (prof.type === 'strength' ? true : false);
+          }
+          if (prof.restMin != null) next.restMin = prof.restMin;
+        }
+        return next;
+      })
+    });
   };
 
   const toggleOff = (off: boolean) => {
@@ -225,7 +243,7 @@ export default function WeeklyProgramScreen() {
                   }}
                   leftIcon={<Icon as={Ionicons} name="trash-outline" />}
                 >
-                  Katalogdan Sil
+                  Remove from Catalog
                 </Button>
               )}
             </FormControl>
@@ -300,6 +318,14 @@ export default function WeeklyProgramScreen() {
                 <Input keyboardType="number-pad" value={String(ex.repsCount)} onChangeText={t => updateExercise(idx, 'repsCount', parseInt(t.replace(/[^0-9]/g, ''), 10) || 0)} />
               </FormControl>
             </HStack>
+            <FormControl mt={2}>
+              <FormControl.Label>Set rest (min)</FormControl.Label>
+              <Input
+                keyboardType="decimal-pad"
+                value={ex.restMin != null ? String(ex.restMin) : ''}
+                onChangeText={t => updateExercise(idx, 'restMin' as any, parseFloat(t.replace(/[^0-9.]/g, '')) || 0)}
+              />
+            </FormControl>
           </VStack>
         )}
         ListFooterComponent={() => (!dayPlan.off ? (

@@ -9,6 +9,8 @@ export type ProgramExerciseTemplate = {
   weightBased: boolean;
   setsCount: number;
   repsCount: number;
+  restMin?: number; // optional rest between sets in minutes
+  defaultWeight?: number; // optional uniform weight per set
 };
 
 export type WeeklyProgramDay = {

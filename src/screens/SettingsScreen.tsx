@@ -235,7 +235,7 @@ export default function SettingsScreen() {
             onPress={() => (navigation as any).navigate('ExerciseImagesManagement')}
             leftIcon={<Icon as={Ionicons} name="images" size="sm" />}
           >
-            Exercise Images
+            Edit Exercises
           </Button>
 
           {/* Logout */}

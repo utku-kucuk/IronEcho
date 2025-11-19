@@ -121,6 +121,14 @@ class SyncService {
 
     this.isSyncing = true;
     this.updateSyncStatus();
+    // Safety guard: if something hangs, reset syncing state after 30s
+    const safetyTimer = setTimeout(() => {
+      if (this.isSyncing) {
+        console.warn('[Sync] Safety timer elapsed; forcing isSyncing=false');
+        this.isSyncing = false;
+        this.updateSyncStatus();
+      }
+    }, 30000);
 
     try {
       // Sync workouts
@@ -151,6 +159,7 @@ class SyncService {
         });
       }
     } finally {
+      clearTimeout(safetyTimer);
       this.isSyncing = false;
       this.updateSyncStatus();
     }

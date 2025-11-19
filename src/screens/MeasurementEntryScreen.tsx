@@ -127,18 +127,23 @@ export default function MeasurementEntryScreen() {
   const cardBg = useColorModeValue('white','gray.800');
   return (
     <Box flex={1} bg={pageBg} safeArea>
-      <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg={headerBg} borderBottomWidth={1} borderBottomColor={useColorModeValue('gray.200','gray.700')}>
-        <HStack alignItems="center" space={2}>
-          <Button variant="ghost" onPress={() => {
-            if (navigation.canGoBack()) {
-              navigation.goBack();
-            } else {
-              (navigation as any).navigate('Main');
-            }
-          }} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
-          <Text fontSize="lg" fontWeight="bold">{editId ? 'Edit Measurement' : 'New Measurement'}</Text>
-        </HStack>
-        <HStack space={2}>
+      <HStack alignItems="center" justifyContent="space-between" pl={6} pr={8} py={3} bg={headerBg} borderBottomWidth={1} borderBottomColor={useColorModeValue('gray.200','gray.700')}>
+        {/* Left: Back */}
+        <Button variant="ghost" onPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            (navigation as any).navigate('Main');
+          }
+        }} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
+        {/* Center: Title */}
+        <Box flex={1} minW="0" mx={2} alignItems="center">
+          <Text fontSize="lg" fontWeight="bold" numberOfLines={1} ellipsizeMode="tail">
+            {editId ? 'Edit Measurement' : 'New Measurement'}
+          </Text>
+        </Box>
+        {/* Right: Actions */}
+        <HStack space={2} flexShrink={0} justifyContent="flex-end">
           {editId ? (
             <Button variant="outline" colorScheme="red" onPress={handleDelete} leftIcon={<Icon as={Ionicons} name="trash" />}>Delete</Button>
           ) : null}

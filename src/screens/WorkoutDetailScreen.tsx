@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, VStack, HStack, Text, Button, Icon, Heading, Divider, useToast, AlertDialog } from 'native-base';
+import { Box, VStack, HStack, Text, Button, Icon, Heading, Divider, useToast, AlertDialog, useColorMode } from 'native-base';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { realmDB } from '../database/realm';
@@ -9,6 +9,13 @@ export default function WorkoutDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation();
   const toast = useToast();
+  const { colorMode } = useColorMode();
+  const pageBg = colorMode === 'dark' ? 'gray.900' : 'gray.50';
+  const headerBg = colorMode === 'dark' ? 'gray.900' : 'white';
+  const cardBg = colorMode === 'dark' ? 'gray.800' : 'white';
+  const textPrimary = colorMode === 'dark' ? 'gray.100' : 'gray.800';
+  const textSecondary = colorMode === 'dark' ? 'gray.300' : 'gray.600';
+  const borderColor = colorMode === 'dark' ? 'gray.700' : 'gray.200';
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const cancelRef = React.useRef(null);
@@ -46,16 +53,16 @@ export default function WorkoutDetailScreen() {
 
   if (!workout) {
     return (
-      <Box flex={1} bg="gray.50" safeArea alignItems="center" justifyContent="center">
-        <Text color="gray.500">Workout not found</Text>
+      <Box flex={1} bg={pageBg} safeArea alignItems="center" justifyContent="center">
+        <Text color={textSecondary}>Workout not found</Text>
       </Box>
     );
   }
 
   return (
-    <Box flex={1} bg="gray.50" safeArea>
-      <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg="white" borderBottomWidth={1} borderBottomColor="gray.200">
-        <HStack alignItems="center" space={2}>
+    <Box flex={1} bg={pageBg} safeArea>
+      <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg={headerBg} borderBottomWidth={1} borderBottomColor={borderColor}>
+        <HStack alignItems="center" space={2} flex={1} minW="0">
           <Button variant="ghost" onPress={() => {
             if (navigation.canGoBack()) {
               navigation.goBack();
@@ -63,28 +70,34 @@ export default function WorkoutDetailScreen() {
               (navigation as any).navigate('Main');
             }
           }} leftIcon={<Icon as={Ionicons} name="chevron-back" />}>Back</Button>
-          <Text fontSize="lg" fontWeight="bold">{formatDate(new Date(workout.date))}</Text>
+          <Text fontSize="lg" fontWeight="bold" color={textPrimary} numberOfLines={1} ellipsizeMode="tail">
+            {formatDate(new Date(workout.date))}
+          </Text>
         </HStack>
-        <HStack space={2}>
-          <Button variant="outline" onPress={onEdit} leftIcon={<Icon as={Ionicons} name="create-outline" />}>Edit</Button>
-          <Button colorScheme="red" variant="outline" onPress={() => setIsDeleteOpen(true)} leftIcon={<Icon as={Ionicons} name="trash" />}>Delete</Button>
+        <HStack space={1} flexShrink={0} ml={2}>
+          <Button variant="ghost" onPress={onEdit} size="sm" px={2}>
+            <Icon as={Ionicons} name="create-outline" color={textPrimary} />
+          </Button>
+          <Button variant="ghost" onPress={() => setIsDeleteOpen(true)} size="sm" px={2}>
+            <Icon as={Ionicons} name="trash" color="red.400" />
+          </Button>
         </HStack>
       </HStack>
 
       <VStack space={3} p={4}>
-        <Heading size="md">Exercises</Heading>
+        <Heading size="md" color={textPrimary}>Exercises</Heading>
         {workout.exercises.map((ex: any, idx: number) => (
-          <VStack key={idx} bg="white" p={4} borderRadius="lg" shadow={1} space={2}>
+          <VStack key={idx} bg={cardBg} p={4} borderRadius="lg" shadow={1} space={2}>
             <HStack justifyContent="space-between" alignItems="center">
-              <Text fontWeight="semibold">{ex.name}</Text>
-              <Text color="gray.600">{ex.sets.length} sets</Text>
+              <Text fontWeight="semibold" color={textPrimary}>{ex.name}</Text>
+              <Text color={textSecondary}>{ex.sets.length} sets</Text>
             </HStack>
             <Divider />
             <VStack space={1}>
               {ex.sets.map((s: any, si: number) => (
                 <HStack key={si} justifyContent="space-between">
-                  <Text color="gray.700">Set {si + 1}</Text>
-                  <Text color="gray.700">{s.reps} reps @ {s.weight ?? 0} kg</Text>
+                  <Text color={textSecondary}>Set {si + 1}</Text>
+                  <Text color={textSecondary}>{s.reps} reps @ {s.weight ?? 0} kg</Text>
                 </HStack>
               ))}
             </VStack>

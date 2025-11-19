@@ -183,6 +183,7 @@ export type RootStackParamList = {
   WeeklyProgram?: undefined;
   WorkoutDetail: { id: string };
   ExerciseImagesManagement: undefined;
+  WorkoutHistory: undefined;
 };
 
 export type MainTabParamList = {

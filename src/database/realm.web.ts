@@ -154,6 +154,15 @@ class RealmWebDatabase {
       .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
   }
 
+  reassignExerciseImages(oldName: string, newName: string, userId: string): number {
+    const items = Object.values(this.store.exerciseImages)
+      .filter(img => img.userId === userId && img.exerciseName === oldName);
+    items.forEach(img => {
+      this.store.exerciseImages[img._id] = { ...img, exerciseName: newName };
+    });
+    return items.length;
+  }
+
   deleteExerciseImage(id: string): boolean {
     const exists = !!this.store.exerciseImages[id];
     if (exists) delete this.store.exerciseImages[id];

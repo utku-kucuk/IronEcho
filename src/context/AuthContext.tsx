@@ -45,9 +45,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return;
       }
       
-      // Check if user is authenticated
+      // Check if user is authenticated - keep session active if tokens exist
+      // User will stay logged in until they manually logout
       if (apiClient.isAuthenticated()) {
-        // Try to get user from local storage first
         const tokens = apiClient.getTokens();
         if (tokens) {
           // Get user from Realm database
@@ -55,14 +55,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
           if (localUser) {
             setUser(localUser);
           } else {
-            // User not found locally, might need to re-authenticate
-            await logout();
+            // User not found locally, but keep tokens - user might have cleared Realm
+            // Don't auto-logout, let user stay logged in
+            console.warn('User not found in Realm, but tokens exist - keeping session active');
           }
         }
       }
     } catch (error) {
       console.error('Auth state check failed:', error);
-      await logout();
+      // Don't auto-logout on error - keep user session active until manual logout
+      // Only clear loading state
     } finally {
       setIsLoading(false);
     }
@@ -84,6 +86,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
       realmDB.saveUser(userWithId);
       
       setUser(userWithId);
+      
+      // Clear sync status error on successful login
+      try {
+        const syncStatus = realmDB.getSyncStatus();
+        if (syncStatus) {
+          realmDB.updateSyncStatus({
+            ...syncStatus,
+            error: undefined
+          });
+        }
+        // Trigger sync status update
+        const { syncService } = await import('../services/syncService');
+        syncService.updateSyncStatus();
+      } catch (syncError) {
+        console.warn('Failed to clear sync error on login:', syncError);
+      }
       
       // Avoid noisy console.logs in production
       // console.log('✅ Login successful');
@@ -120,6 +138,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
       realmDB.saveUser(userWithId);
       
       setUser(userWithId);
+      
+      // Clear sync status error on successful registration
+      try {
+        const syncStatus = realmDB.getSyncStatus();
+        if (syncStatus) {
+          realmDB.updateSyncStatus({
+            ...syncStatus,
+            error: undefined
+          });
+        }
+        // Trigger sync status update
+        const { syncService } = await import('../services/syncService');
+        syncService.updateSyncStatus();
+      } catch (syncError) {
+        console.warn('Failed to clear sync error on registration:', syncError);
+      }
       
       // console.log('✅ Registration successful');
     } catch (error: any) {

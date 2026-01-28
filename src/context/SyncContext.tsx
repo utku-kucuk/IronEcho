@@ -23,9 +23,34 @@ export function SyncProvider({ children }: SyncProviderProps) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
 
   useEffect(() => {
-    // Get initial sync status
-    const initialStatus = syncService.getSyncStatus();
-    setSyncStatus(initialStatus);
+    // Wait for Realm to be initialized before accessing sync status
+    const initializeSyncStatus = async () => {
+      try {
+        // Import realmDB to check initialization
+        const { realmDB } = await import('../database/realm');
+        
+        // Wait for Realm to be initialized
+        if (!realmDB.isRealmInitialized()) {
+          await realmDB.initialize();
+        }
+        
+        // Get initial sync status after Realm is ready
+        const initialStatus = syncService.getSyncStatus();
+        setSyncStatus(initialStatus);
+      } catch (error) {
+        console.warn('Failed to initialize sync status:', error);
+        // Set default status if Realm is not available
+        setSyncStatus({
+          isOnline: false,
+          isSyncing: false,
+          pendingCount: 0,
+          lastSync: undefined,
+          error: undefined
+        });
+      }
+    };
+
+    initializeSyncStatus();
 
     // Listen for sync status changes
     const handleStatusChange = (status: SyncStatus) => {

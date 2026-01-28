@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Box, VStack, HStack, Text, Button, Icon, FormControl, Input, Select, CheckIcon, Divider, Image, ScrollView, Pressable, Modal, IconButton, useToast, AlertDialog, useColorModeValue } from 'native-base';
-import { FlatList } from 'react-native';
+import { FlatList, TextInput, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { DEFAULT_WEEKLY_PROGRAM, Weekday, getWeeklyProgram, saveWeeklyProgram, ProgramExerciseTemplate } from '../services/weeklyProgram';
 import { getCatalog, addExerciseName, removeExerciseName } from '../services/exerciseCatalog';
@@ -30,17 +30,29 @@ export default function WeeklyProgramScreen() {
   const cancelRef = React.useRef(null);
   const [exerciseProfileMap, setExerciseProfileMap] = useState<Record<string, { group?: string; type?: string; restMin?: number; weightBased?: boolean }>>({});
 
+  const loadProfileMap = async () => {
+    if (!user) return;
+    const catalog = await getCatalog(user._id);
+    setExerciseOptions(catalog.exercises);
+    setExerciseProfileMap((catalog as any).exerciseProfiles || {});
+  };
+
   useEffect(() => {
     (async () => {
       if (!user) return;
       const existing = await getWeeklyProgram(user._id);
       if (existing) setProgram(existing);
-      const catalog = await getCatalog(user._id);
-      setExerciseOptions(catalog.exercises);
-      setExerciseProfileMap((catalog as any).exerciseProfiles || {});
+      await loadProfileMap();
       loadExerciseImages();
     })();
   }, [user]);
+
+  // Reload profile map when screen comes into focus (e.g., returning from settings)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadProfileMap();
+    }, [user])
+  );
 
   useEffect(() => {
     loadExerciseImages();
@@ -66,14 +78,41 @@ export default function WeeklyProgramScreen() {
       exercises: dayPlan.exercises.map((ex: any, i: number) => {
         if (i !== idx) return ex;
         const next: any = { ...ex, [field]: value };
-        if (field === 'name') {
-          const prof = (exerciseProfileMap || {})[value as string] || {};
-          if (prof.group) next.muscleGroup = prof.group;
+        if (field === 'name' && value) {
+          // When exercise name is selected, load all default values from profile
+          // Try exact match first, then case-insensitive match
+          const exerciseName = value as string;
+          let prof = (exerciseProfileMap || {})[exerciseName] || {};
+          
+          // If not found, try case-insensitive search
+          if (!prof || Object.keys(prof).length === 0) {
+            const lowerName = exerciseName.toLowerCase();
+            const matchingKey = Object.keys(exerciseProfileMap || {}).find(
+              key => key.toLowerCase() === lowerName
+            );
+            if (matchingKey) {
+              prof = exerciseProfileMap[matchingKey];
+            }
+          }
+          
+          // Apply muscle group if available in profile
+          if (prof.group) {
+            next.muscleGroup = prof.group;
+          }
+          // Apply type if available in profile
           if (prof.type) {
             next.type = prof.type as any;
-            next.weightBased = prof.weightBased != null ? prof.weightBased : (prof.type === 'strength' ? true : false);
           }
-          if (prof.restMin != null) next.restMin = prof.restMin;
+          // Apply weightBased: use profile value if available, otherwise infer from type
+          if (prof.weightBased != null) {
+            next.weightBased = prof.weightBased;
+          } else if (prof.type) {
+            next.weightBased = prof.type === 'strength' ? true : false;
+          }
+          // Apply restMin if available in profile
+          if (prof.restMin != null) {
+            next.restMin = prof.restMin;
+          }
         }
         return next;
       })
@@ -151,18 +190,73 @@ export default function WeeklyProgramScreen() {
   };
 
   const save = async () => {
-    if (!user) return;
-    await saveWeeklyProgram(user._id, program as any);
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      (navigation as any).navigate('Main');
+    if (!user) {
+      toast.show({
+        title: 'Error',
+        description: 'Not authenticated'
+      });
+      return;
+    }
+
+    // Validate all exercises have names
+    const invalidDays: string[] = [];
+    WEEKDAYS.forEach(day => {
+      const dayPlan = program[day];
+      if (!dayPlan.off && dayPlan.exercises && dayPlan.exercises.length > 0) {
+        const hasInvalidExercise = dayPlan.exercises.some((ex: any) => !ex.name || ex.name.trim() === '');
+        if (hasInvalidExercise) {
+          invalidDays.push(day);
+        }
+      }
+    });
+
+    if (invalidDays.length > 0) {
+      toast.show({
+        title: 'Validation Error',
+        description: `Please select an exercise for all exercises in: ${invalidDays.join(', ')}. Exercise not selected.`,
+        duration: 5000
+      });
+      return;
+    }
+
+    try {
+      await saveWeeklyProgram(user._id, program as any);
+      toast.show({
+        title: 'Saved',
+        description: 'Weekly program saved successfully'
+      });
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        (navigation as any).navigate('Main');
+      }
+    } catch (error: any) {
+      toast.show({
+        title: 'Error',
+        description: error?.message || 'Failed to save weekly program'
+      });
     }
   };
 
   const pageBg = useColorModeValue('gray.50','gray.900');
   const headerBg = useColorModeValue('white','gray.900');
   const cardBg = useColorModeValue('white','gray.800');
+  const inputBg = useColorModeValue('white','gray.800');
+  const inputText = useColorModeValue('gray.800','gray.100');
+  const inputPlaceholder = useColorModeValue('gray.500','gray.400');
+  const borderColor = useColorModeValue('gray.200','gray.700');
+  
+  // TextInput styles
+  const textInputStyle = {
+    backgroundColor: useColorModeValue('#FFFFFF','#1F2937'),
+    color: useColorModeValue('#1F2937','#F3F4F6'),
+    borderWidth: 1,
+    borderColor: useColorModeValue('#E5E7EB','#374151'),
+    borderRadius: 6,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 40,
+  };
   return (
     <Box flex={1} bg={pageBg} safeArea>
       <HStack alignItems="center" justifyContent="space-between" px={4} py={3} bg={headerBg} borderBottomWidth={1} borderBottomColor={useColorModeValue('gray.200','gray.700')}>
@@ -184,6 +278,8 @@ export default function WeeklyProgramScreen() {
         data={dayPlan.off ? [] : (dayPlan.exercises || [])}
         keyExtractor={(_, idx) => `${selectedDay}-exercise-${idx}`}
         contentContainerStyle={{ padding: 16 }}
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="on-drag"
         ListHeaderComponent={() => (
           <VStack space={4}>
             <FormControl>
@@ -311,20 +407,47 @@ export default function WeeklyProgramScreen() {
             <HStack space={2}>
               <FormControl flex={1}>
                 <FormControl.Label>Sets</FormControl.Label>
-                <Input keyboardType="number-pad" value={String(ex.setsCount)} onChangeText={t => updateExercise(idx, 'setsCount', parseInt(t.replace(/[^0-9]/g, ''), 10) || 0)} />
+                <Select
+                  selectedValue={String(ex.setsCount)}
+                  onValueChange={v => updateExercise(idx, 'setsCount', parseInt(v, 10))}
+                  _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                  placeholder="Select sets"
+                >
+                  {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
+                    <Select.Item key={`sets-${num}`} label={String(num)} value={String(num)} />
+                  ))}
+                </Select>
               </FormControl>
               <FormControl flex={1}>
                 <FormControl.Label>Reps</FormControl.Label>
-                <Input keyboardType="number-pad" value={String(ex.repsCount)} onChangeText={t => updateExercise(idx, 'repsCount', parseInt(t.replace(/[^0-9]/g, ''), 10) || 0)} />
+                <Select
+                  selectedValue={String(ex.repsCount)}
+                  onValueChange={v => updateExercise(idx, 'repsCount', parseInt(v, 10))}
+                  _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                  placeholder="Select reps"
+                >
+                  {Array.from({ length: 60 }, (_, i) => i + 1).map(num => (
+                    <Select.Item key={`reps-${num}`} label={String(num)} value={String(num)} />
+                  ))}
+                </Select>
               </FormControl>
             </HStack>
             <FormControl mt={2}>
               <FormControl.Label>Set rest (min)</FormControl.Label>
-              <Input
-                keyboardType="decimal-pad"
-                value={ex.restMin != null ? String(ex.restMin) : ''}
-                onChangeText={t => updateExercise(idx, 'restMin' as any, parseFloat(t.replace(/[^0-9.]/g, '')) || 0)}
-              />
+              <Select
+                selectedValue={ex.restMin != null ? String(ex.restMin) : '0'}
+                onValueChange={v => updateExercise(idx, 'restMin' as any, parseFloat(v))}
+                _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                placeholder="Select rest"
+              >
+                {Array.from({ length: 21 }, (_, i) => {
+                  const value = i * 0.5;
+                  const label = value % 1 === 0 ? String(value) : `${Math.floor(value)}.30`;
+                  return (
+                    <Select.Item key={`rest-${idx}-${value}`} label={label} value={String(value)} />
+                  );
+                })}
+              </Select>
             </FormControl>
           </VStack>
         )}
@@ -341,7 +464,23 @@ export default function WeeklyProgramScreen() {
           <Modal.Body>
             <FormControl>
               <FormControl.Label>Exercise Name</FormControl.Label>
-              <Input value={newExerciseName} onChangeText={setNewExerciseName} placeholder="e.g., Bulgarian Split Squat" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <TextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={newExerciseName}
+                  onChangeText={setNewExerciseName}
+                  placeholder="e.g., Bulgarian Split Squat"
+                  placeholderTextColor={inputPlaceholder}
+                  editable={true}
+                  selectTextOnFocus={false}
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                  onSubmitEditing={() => Keyboard.dismiss()}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
           </Modal.Body>
           <Modal.Footer>

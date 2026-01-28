@@ -37,8 +37,12 @@ class SyncService {
       this.isOnline = state.isConnected ?? false;
 
       if (!wasOnline && this.isOnline) {
-        // Just came online, start syncing
-        this.startSync();
+        // Just came online, start syncing (only if Realm is initialized)
+        if (realmDB.isRealmInitialized()) {
+          this.startSync();
+        } else {
+          console.warn('[Sync] Network online but Realm not initialized yet, will sync when ready');
+        }
       } else if (wasOnline && !this.isOnline) {
         // Just went offline, stop syncing
         this.stopSync();
@@ -101,7 +105,7 @@ class SyncService {
     }
 
     this.syncInterval = setInterval(() => {
-      if (this.isOnline && !this.isSyncing) {
+      if (this.isOnline && !this.isSyncing && realmDB.isRealmInitialized()) {
         this.startSync();
       }
     }, intervalMinutes * 60 * 1000);
@@ -119,6 +123,28 @@ class SyncService {
   async startSync(): Promise<void> {
     if (!this.isOnline || this.isSyncing) return;
 
+    // Check if Realm is initialized before attempting sync
+    if (!realmDB.isRealmInitialized()) {
+      console.warn('[Sync] Realm not initialized yet, skipping sync');
+      return;
+    }
+
+    // Check authentication and refresh token if needed
+    if (!apiClient.isAuthenticated()) {
+      console.warn('[Sync] Not authenticated, skipping sync');
+      this.updateSyncStatus();
+      return;
+    }
+
+    // Try to refresh token before sync to ensure we have a valid token
+    try {
+      await apiClient.refreshToken();
+      console.log('[Sync] Token refreshed successfully');
+    } catch (refreshError) {
+      console.warn('[Sync] Token refresh failed, but continuing with sync attempt:', refreshError);
+      // Continue anyway - the API interceptor will handle 401 errors
+    }
+
     this.isSyncing = true;
     this.updateSyncStatus();
     // Safety guard: if something hangs, reset syncing state after 30s
@@ -131,6 +157,11 @@ class SyncService {
     }, 30000);
 
     try {
+      // Double-check Realm is still initialized
+      if (!realmDB.isRealmInitialized()) {
+        throw new Error('Realm not initialized');
+      }
+
       // Sync workouts
       await this.syncWorkouts();
       
@@ -151,12 +182,19 @@ class SyncService {
     } catch (error) {
       console.error('❌ Sync failed:', error);
       
-      const syncStatus = realmDB.getSyncStatus();
-      if (syncStatus) {
-        realmDB.updateSyncStatus({
-          ...syncStatus,
-          error: error instanceof Error ? error.message : 'Sync failed'
-        });
+      // Only update sync status if Realm is initialized
+      if (realmDB.isRealmInitialized()) {
+        try {
+          const syncStatus = realmDB.getSyncStatus();
+          if (syncStatus) {
+            realmDB.updateSyncStatus({
+              ...syncStatus,
+              error: error instanceof Error ? error.message : 'Sync failed'
+            });
+          }
+        } catch (statusError) {
+          console.warn('[Sync] Failed to update sync status:', statusError);
+        }
       }
     } finally {
       clearTimeout(safetyTimer);
@@ -173,6 +211,9 @@ class SyncService {
 
   // Sync workouts
   private async syncWorkouts(): Promise<void> {
+    if (!realmDB.isRealmInitialized()) {
+      throw new Error('Realm not initialized');
+    }
     const unsyncedWorkouts = realmDB.getUnsyncedWorkouts();
     
     for (const workout of unsyncedWorkouts) {
@@ -210,8 +251,49 @@ class SyncService {
           
           realmDB.markWorkoutAsSynced(workout._id);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Failed to sync workout ${workout._id}:`, error);
+        // If 401, try to refresh token and retry once
+        if (error?.response?.status === 401) {
+          try {
+            console.log('[Sync] 401 error, attempting token refresh...');
+            await apiClient.refreshToken();
+            console.log('[Sync] Token refreshed, retrying workout sync...');
+            // Retry the sync operation
+            if (workout._id.startsWith('temp_')) {
+              const serverWorkout = await apiClient.createWorkout({
+                date: workout.date,
+                warmup: workout.warmup,
+                exercises: workout.exercises,
+                notes: workout.notes,
+                totalVolume: workout.totalVolume,
+                isPR: workout.isPR,
+                lastModified: workout.lastModified,
+                clientTimestamp: workout.clientTimestamp
+              });
+              realmDB.updateWorkout(workout._id, {
+                _id: serverWorkout._id,
+                synced: true
+              });
+            } else {
+              await apiClient.updateWorkout(workout._id, {
+                date: workout.date,
+                warmup: workout.warmup,
+                exercises: workout.exercises,
+                notes: workout.notes,
+                totalVolume: workout.totalVolume,
+                isPR: workout.isPR,
+                lastModified: workout.lastModified,
+                clientTimestamp: workout.clientTimestamp
+              });
+              realmDB.markWorkoutAsSynced(workout._id);
+            }
+            return; // Success after retry
+          } catch (refreshError) {
+            console.error('[Sync] Token refresh failed during workout sync:', refreshError);
+            throw new Error('Authentication failed. Please log in again.');
+          }
+        }
         throw error;
       }
     }
@@ -219,6 +301,9 @@ class SyncService {
 
   // Sync measurements
   private async syncMeasurements(): Promise<void> {
+    if (!realmDB.isRealmInitialized()) {
+      throw new Error('Realm not initialized');
+    }
     const unsyncedMeasurements = realmDB.getUnsyncedMeasurements();
     
     for (const measurement of unsyncedMeasurements) {
@@ -256,8 +341,49 @@ class SyncService {
           
           realmDB.markMeasurementAsSynced(measurement._id);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Failed to sync measurement ${measurement._id}:`, error);
+        // If 401, try to refresh token and retry once
+        if (error?.response?.status === 401) {
+          try {
+            console.log('[Sync] 401 error, attempting token refresh...');
+            await apiClient.refreshToken();
+            console.log('[Sync] Token refreshed, retrying measurement sync...');
+            // Retry the sync operation
+            if (measurement._id.startsWith('temp_')) {
+              const serverMeasurement = await apiClient.createMeasurement({
+                date: measurement.date,
+                measurements: measurement.measurements,
+                weight: measurement.weight,
+                bodyFat: measurement.bodyFat,
+                notes: measurement.notes,
+                photos: measurement.photos,
+                lastModified: measurement.lastModified,
+                clientTimestamp: measurement.clientTimestamp
+              });
+              realmDB.updateMeasurement(measurement._id, {
+                _id: serverMeasurement._id,
+                synced: true
+              });
+            } else {
+              await apiClient.updateMeasurement(measurement._id, {
+                date: measurement.date,
+                measurements: measurement.measurements,
+                weight: measurement.weight,
+                bodyFat: measurement.bodyFat,
+                notes: measurement.notes,
+                photos: measurement.photos,
+                lastModified: measurement.lastModified,
+                clientTimestamp: measurement.clientTimestamp
+              });
+              realmDB.markMeasurementAsSynced(measurement._id);
+            }
+            return; // Success after retry
+          } catch (refreshError) {
+            console.error('[Sync] Token refresh failed during measurement sync:', refreshError);
+            throw new Error('Authentication failed. Please log in again.');
+          }
+        }
         throw error;
       }
     }
@@ -397,26 +523,73 @@ class SyncService {
     this.eventListeners.forEach(listener => listener(event));
   }
 
-  private updateSyncStatus(): void {
-    const unsyncedWorkouts = realmDB.getUnsyncedWorkouts();
-    const unsyncedMeasurements = realmDB.getUnsyncedMeasurements();
-    const pendingCount = unsyncedWorkouts.length + unsyncedMeasurements.length;
-    
-    const syncStatus: SyncStatus = {
-      isOnline: this.isOnline,
-      isSyncing: this.isSyncing,
-      lastSync: realmDB.getSyncStatus()?.lastSync,
-      pendingCount,
-      error: realmDB.getSyncStatus()?.error
-    };
+  updateSyncStatus(): void {
+    try {
+      if (!realmDB.isRealmInitialized()) {
+        // Return default status if Realm is not initialized
+        const defaultStatus: SyncStatus = {
+          isOnline: this.isOnline,
+          isSyncing: this.isSyncing,
+          pendingCount: 0,
+          lastSync: undefined,
+          error: undefined
+        };
+        this.statusListeners.forEach(listener => listener(defaultStatus));
+        return;
+      }
 
-    realmDB.updateSyncStatus(syncStatus);
-    this.statusListeners.forEach(listener => listener(syncStatus));
+      const unsyncedWorkouts = realmDB.getUnsyncedWorkouts();
+      const unsyncedMeasurements = realmDB.getUnsyncedMeasurements();
+      const pendingCount = unsyncedWorkouts.length + unsyncedMeasurements.length;
+      
+      const syncStatus: SyncStatus = {
+        isOnline: this.isOnline,
+        isSyncing: this.isSyncing,
+        lastSync: realmDB.getSyncStatus()?.lastSync,
+        pendingCount,
+        error: realmDB.getSyncStatus()?.error
+      };
+
+      realmDB.updateSyncStatus(syncStatus);
+      this.statusListeners.forEach(listener => listener(syncStatus));
+    } catch (error) {
+      console.warn('Failed to update sync status:', error);
+      // Still notify listeners with default status
+      const defaultStatus: SyncStatus = {
+        isOnline: this.isOnline,
+        isSyncing: this.isSyncing,
+        pendingCount: 0,
+        lastSync: undefined,
+        error: undefined
+      };
+      this.statusListeners.forEach(listener => listener(defaultStatus));
+    }
   }
 
   // Get current sync status
   getSyncStatus(): SyncStatus | null {
-    return realmDB.getSyncStatus();
+    try {
+      if (!realmDB.isRealmInitialized()) {
+        // Return default status if Realm is not initialized
+        return {
+          isOnline: this.isOnline,
+          isSyncing: this.isSyncing,
+          pendingCount: 0,
+          lastSync: undefined,
+          error: undefined
+        };
+      }
+      return realmDB.getSyncStatus();
+    } catch (error) {
+      // Return default status if there's an error
+      return {
+        isOnline: this.isOnline,
+        isSyncing: this.isSyncing,
+        pendingCount: 0,
+        lastSync: undefined,
+        error: undefined
+      };
+    }
   }
 
   // Check if online

@@ -314,4 +314,4 @@ export const schemas = [
 ];
 
 // Schema versions for migrations
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4; // Incremented to force fresh database

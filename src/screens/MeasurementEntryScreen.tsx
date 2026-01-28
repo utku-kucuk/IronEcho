@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Box, VStack, HStack, Text, Input, Button, Icon, useToast, FormControl, Select, CheckIcon, Image, Pressable, FlatList, useColorModeValue } from 'native-base';
+import { TextInput, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { realmDB } from '../database/realm';
+import { StableTextInput } from '../components/StableTextInput';
 import { useAuth } from '../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -125,6 +127,21 @@ export default function MeasurementEntryScreen() {
   const pageBg = useColorModeValue('gray.50','gray.900');
   const headerBg = useColorModeValue('white','gray.900');
   const cardBg = useColorModeValue('white','gray.800');
+  const inputBg = useColorModeValue('white','gray.800');
+  const inputPlaceholder = useColorModeValue('gray.500','gray.400');
+  const borderColor = useColorModeValue('gray.200','gray.700');
+  
+  // TextInput styles
+  const textInputStyle = {
+    backgroundColor: useColorModeValue('#FFFFFF','#1F2937'),
+    color: useColorModeValue('#1F2937','#F3F4F6'),
+    borderWidth: 1,
+    borderColor: useColorModeValue('#E5E7EB','#374151'),
+    borderRadius: 6,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 40,
+  };
   return (
     <Box flex={1} bg={pageBg} safeArea>
       <HStack alignItems="center" justifyContent="space-between" pl={6} pr={8} py={3} bg={headerBg} borderBottomWidth={1} borderBottomColor={useColorModeValue('gray.200','gray.700')}>
@@ -156,6 +173,9 @@ export default function MeasurementEntryScreen() {
         keyExtractor={() => 'measurement-form'}
         renderItem={null}
         contentContainerStyle={{ padding: 16 }}
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="none"
+        removeClippedSubviews={false}
         ListHeaderComponent={() => (
         <VStack space={4}>
           <VStack space={3} bg={cardBg} p={4} borderRadius="lg" shadow={1}>
@@ -209,11 +229,55 @@ export default function MeasurementEntryScreen() {
           <HStack space={2}>
             <FormControl flex={1}>
               <FormControl.Label>Weight (kg)</FormControl.Label>
-              <Input value={weight} onChangeText={setWeight} keyboardType="decimal-pad" placeholder="e.g. 80.5" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={weight}
+                  onChangeText={setWeight}
+                  keyboardType="decimal-pad"
+                  placeholder="e.g. 80.5"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
             <FormControl flex={1}>
               <FormControl.Label>Body Fat (%)</FormControl.Label>
-              <Input value={bodyFat} onChangeText={setBodyFat} keyboardType="decimal-pad" placeholder="e.g. 15.2" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={bodyFat}
+                  onChangeText={setBodyFat}
+                  keyboardType="decimal-pad"
+                  placeholder="e.g. 15.2"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
           </HStack>
 
@@ -221,51 +285,261 @@ export default function MeasurementEntryScreen() {
           <HStack space={2}>
             <FormControl flex={1}>
               <FormControl.Label>Neck</FormControl.Label>
-              <Input value={neck} onChangeText={setNeck} keyboardType="decimal-pad" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={neck}
+                  onChangeText={setNeck}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
             <FormControl flex={1}>
               <FormControl.Label>Waist</FormControl.Label>
-              <Input value={waist} onChangeText={setWaist} keyboardType="decimal-pad" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={waist}
+                  onChangeText={setWaist}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
           </HStack>
           <HStack space={2}>
             <FormControl flex={1}>
               <FormControl.Label>Chest</FormControl.Label>
-              <Input value={chest} onChangeText={setChest} keyboardType="decimal-pad" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={chest}
+                  onChangeText={setChest}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
             <FormControl flex={1}>
               <FormControl.Label>Hips</FormControl.Label>
-              <Input value={hips} onChangeText={setHips} keyboardType="decimal-pad" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={hips}
+                  onChangeText={setHips}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
           </HStack>
           <HStack space={2}>
             <FormControl flex={1}>
               <FormControl.Label>Thigh Left</FormControl.Label>
-              <Input value={thighLeft} onChangeText={setThighLeft} keyboardType="decimal-pad" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={thighLeft}
+                  onChangeText={setThighLeft}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
             <FormControl flex={1}>
               <FormControl.Label>Thigh Right</FormControl.Label>
-              <Input value={thighRight} onChangeText={setThighRight} keyboardType="decimal-pad" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={thighRight}
+                  onChangeText={setThighRight}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
           </HStack>
           <HStack space={2}>
             <FormControl flex={1}>
               <FormControl.Label>Arm Left (relaxed)</FormControl.Label>
-              <Input value={armLeftRelaxed} onChangeText={setArmLeftRelaxed} keyboardType="decimal-pad" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={armLeftRelaxed}
+                  onChangeText={setArmLeftRelaxed}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
             <FormControl flex={1}>
               <FormControl.Label>Arm Right (relaxed)</FormControl.Label>
-              <Input value={armRightRelaxed} onChangeText={setArmRightRelaxed} keyboardType="decimal-pad" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={armRightRelaxed}
+                  onChangeText={setArmRightRelaxed}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
           </HStack>
           <HStack space={2}>
             <FormControl flex={1}>
               <FormControl.Label>Arm Left (contracted)</FormControl.Label>
-              <Input value={armLeftContracted} onChangeText={setArmLeftContracted} keyboardType="decimal-pad" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={armLeftContracted}
+                  onChangeText={setArmLeftContracted}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
             <FormControl flex={1}>
               <FormControl.Label>Arm Right (contracted)</FormControl.Label>
-              <Input value={armRightContracted} onChangeText={setArmRightContracted} keyboardType="decimal-pad" />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  value={armRightContracted}
+                  onChangeText={setArmRightContracted}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={inputPlaceholder}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  onFocus={() => {}}
+                  onBlur={() => {}}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
           </HStack>
           </VStack>

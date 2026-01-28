@@ -42,28 +42,44 @@ export async function getCatalog(userId: string): Promise<ExerciseCatalog> {
     const raw = await AsyncStorage.getItem(KEY(userId));
     if (!raw) return DEFAULT_CATALOG;
     const parsed = JSON.parse(raw) as ExerciseCatalog;
-    // Backfill defaults if missing
-    const profilesFromLegacy: Record<string, ExerciseProfile> = {};
+    
+    // Start with current exerciseProfiles (these are the source of truth)
+    const currentProfiles = { ...(parsed.exerciseProfiles || {}) };
+    
+    // Backfill from legacy exerciseGroups only if profile doesn't exist
+    // This ensures new profiles are not overridden by legacy data
     if ((parsed as any).exerciseGroups) {
       Object.entries((parsed as any).exerciseGroups as Record<string, string>).forEach(([k, v]) => {
-        profilesFromLegacy[k] = { ...(profilesFromLegacy[k] || {}), group: v };
+        // Only add legacy group if profile doesn't exist or doesn't have a group
+        if (!currentProfiles[k] || !currentProfiles[k].group) {
+          if (!currentProfiles[k]) {
+            currentProfiles[k] = {};
+          }
+          currentProfiles[k].group = v;
+        }
       });
     }
-    const mergedProfiles = { ...(parsed.exerciseProfiles || {}), ...profilesFromLegacy };
+    
+    console.log('getCatalog - Loaded profiles:', Object.keys(currentProfiles));
+    
     return {
       exercises: parsed.exercises || DEFAULT_CATALOG.exercises,
       muscleGroups: parsed.muscleGroups || DEFAULT_CATALOG.muscleGroups,
       types: parsed.types || DEFAULT_CATALOG.types,
       exerciseGroups: parsed.exerciseGroups || {},
-      exerciseProfiles: mergedProfiles
+      exerciseProfiles: currentProfiles
     };
-  } catch {
+  } catch (error) {
+    console.error('Error loading catalog:', error);
     return DEFAULT_CATALOG;
   }
 }
 
 async function saveCatalog(userId: string, next: ExerciseCatalog) {
-  await AsyncStorage.setItem(KEY(userId), JSON.stringify(next));
+  const serialized = JSON.stringify(next);
+  await AsyncStorage.setItem(KEY(userId), serialized);
+  console.log('💾 saveCatalog - Saved to AsyncStorage:', KEY(userId));
+  console.log('💾 saveCatalog - exerciseProfiles keys:', Object.keys(next.exerciseProfiles || {}));
 }
 
 export async function addExerciseName(userId: string, name: string) {
@@ -120,12 +136,72 @@ export async function renameExercise(userId: string, oldName: string, newName: s
 }
 
 export async function setExerciseProfile(userId: string, exerciseName: string, profile: Partial<ExerciseProfile>) {
-  const cat = await getCatalog(userId);
-  const profiles = { ...(cat.exerciseProfiles || {}) };
-  profiles[exerciseName] = { ...(profiles[exerciseName] || {}), ...profile };
-  // keep legacy group map in sync for old code paths
-  const groups = { ...(cat.exerciseGroups || {}) };
-  if (profile.group) { groups[exerciseName] = profile.group; }
-  await saveCatalog(userId, { ...cat, exerciseProfiles: profiles, exerciseGroups: groups });
+  try {
+    const cat = await getCatalog(userId);
+    const profiles = { ...(cat.exerciseProfiles || {}) };
+    
+    // Create a clean profile object with only defined values
+    // This replaces the entire profile, not merging with existing
+    const newProfile: ExerciseProfile = {};
+    
+    if (profile.group !== undefined) {
+      newProfile.group = profile.group;
+    }
+    if (profile.type !== undefined) {
+      newProfile.type = profile.type;
+    }
+    if (profile.weightBased !== undefined) {
+      newProfile.weightBased = profile.weightBased;
+    }
+    if (profile.restMin !== undefined) {
+      newProfile.restMin = profile.restMin;
+    }
+    
+    // Save the new profile (this replaces any existing profile for this exercise)
+    profiles[exerciseName] = newProfile;
+    
+    console.log('Setting profile for:', exerciseName, 'New profile:', newProfile);
+    
+    // keep legacy group map in sync for old code paths
+    const groups = { ...(cat.exerciseGroups || {}) };
+    if (newProfile.group) { 
+      groups[exerciseName] = newProfile.group; 
+    } else {
+      // Remove from legacy group map if group is not set
+      delete groups[exerciseName];
+    }
+    
+    const updatedCatalog = { ...cat, exerciseProfiles: profiles, exerciseGroups: groups };
+    
+    console.log('💾 About to save catalog with profiles:', Object.keys(profiles));
+    console.log('💾 Profile to save for', exerciseName, ':', JSON.stringify(newProfile, null, 2));
+    
+    await saveCatalog(userId, updatedCatalog);
+    
+    // Small delay to ensure AsyncStorage write completes
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Verify the save was successful by checking if the profile exists in storage
+    const verify = await getCatalog(userId);
+    if (!verify.exerciseProfiles) {
+      console.error('❌ Profile save verification failed: exerciseProfiles is missing');
+      throw new Error('Failed to verify profile save - exerciseProfiles missing');
+    }
+    
+    // Check if profile exists (even if empty object, it should exist after save)
+    const savedProfile = verify.exerciseProfiles[exerciseName];
+    if (savedProfile === undefined) {
+      console.error('❌ Profile save verification failed for:', exerciseName);
+      console.error('❌ Available profiles:', Object.keys(verify.exerciseProfiles || {}));
+      throw new Error(`Failed to verify profile save - profile for ${exerciseName} not found`);
+    }
+    
+    console.log('✅ Profile saved successfully for:', exerciseName);
+    console.log('✅ Saved profile content:', JSON.stringify(savedProfile, null, 2));
+    console.log('✅ Verification passed - profile exists in storage');
+  } catch (error) {
+    console.error('Error saving exercise profile:', error);
+    throw error;
+  }
 }
 

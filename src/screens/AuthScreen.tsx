@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import React, { useState, useRef, useCallback } from 'react';
+import { KeyboardAvoidingView, Platform, TextInput } from 'react-native';
 import {
   Box,
   VStack,
@@ -34,6 +34,20 @@ export default function AuthScreen() {
     language: 'en' as 'en' | 'tr'
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [focusedInput, setFocusedInput] = useState<string | null>(null);
+  
+  // Optimize onChangeText handlers with useCallback
+  const handleEmailChange = useCallback((text: string) => {
+    setFormData(prev => ({ ...prev, email: text }));
+  }, []);
+  
+  const handlePasswordChange = useCallback((text: string) => {
+    setFormData(prev => ({ ...prev, password: text }));
+  }, []);
+  
+  const handleConfirmPasswordChange = useCallback((text: string) => {
+    setFormData(prev => ({ ...prev, confirmPassword: text }));
+  }, []);
 
   const { login, register } = useAuth();
   const toast = useToast();
@@ -43,6 +57,21 @@ export default function AuthScreen() {
   const inputText = colorMode === 'dark' ? 'gray.100' : 'gray.800';
   const inputPlaceholder = colorMode === 'dark' ? 'gray.400' : 'gray.500';
   const inputBorder = colorMode === 'dark' ? 'gray.600' : 'gray.300';
+  
+  // Create input styles
+  const inputStyle = {
+    backgroundColor: colorMode === 'dark' ? '#1F2937' : '#FFFFFF',
+    color: colorMode === 'dark' ? '#F3F4F6' : '#1F2937',
+    padding: 12,
+    fontSize: 16,
+    minHeight: 40,
+  };
+  
+  const getBorderColor = (inputName: string, hasError: boolean) => {
+    if (hasError) return '#EF4444'; // error.500
+    if (focusedInput === inputName) return '#3B82F6'; // primary.500
+    return colorMode === 'dark' ? '#4B5563' : '#D1D5DB';
+  };
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -116,16 +145,16 @@ export default function AuthScreen() {
 
   return (
     <Box flex={1} bg={pageBg} safeArea>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="always"
-          keyboardDismissMode={Platform.OS === 'ios' ? 'none' : 'on-drag'}
-        >
-      <Center flex={1} px={6}>
-        <VStack space={6} w="100%" maxW="400px">
-          {/* Header */}
-          <VStack space={2} alignItems="center">
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        enabled={Platform.OS === 'ios'}
+      >
+        <Box flex={1} px={6} py={4} justifyContent="center">
+          <VStack space={6} w="100%" maxW="400px" mx="auto">
+            {/* Header */}
+            <VStack space={2} alignItems="center">
             <Icon as={Ionicons} name="fitness" size="4xl" color="primary.500" />
             <Heading size="xl" color="primary.500">
               IronEcho
@@ -140,66 +169,140 @@ export default function AuthScreen() {
             {/* Email */}
             <FormControl isInvalid={!!errors.email}>
               <FormControl.Label>Email</FormControl.Label>
-              <Input
-                placeholder="Enter your email"
-                value={formData.email}
-                onChangeText={(text) => setFormData(prev => ({ ...prev, email: text }))}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                textContentType="emailAddress"
-                returnKeyType="next"
-                blurOnSubmit={false}
+              <Box
+                borderWidth={focusedInput === 'email' ? 2 : 1}
+                borderRadius={6}
+                borderColor={getBorderColor('email', !!errors.email)}
                 bg={inputBg}
-                color={inputText}
-                placeholderTextColor={inputPlaceholder}
-                borderColor={inputBorder}
-                _focus={{ borderColor: 'primary.500' }}
-              />
-              <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
-                {errors.email}
-              </FormControl.ErrorMessage>
+              >
+                <TextInput
+                  style={[
+                    inputStyle,
+                    { borderWidth: 0, outlineStyle: 'none' } // Remove border from TextInput, use Box border
+                  ]}
+                  placeholder="Enter your email"
+                  placeholderTextColor={inputPlaceholder}
+                  value={formData.email}
+                  onChangeText={handleEmailChange}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  textContentType="emailAddress"
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  editable={true}
+                  selectTextOnFocus={false}
+                  autoFocus={false}
+                  clearButtonMode="while-editing"
+                  onFocus={(e) => {
+                    setFocusedInput('email');
+                    // Prevent ScrollView from interfering
+                    e.stopPropagation();
+                  }}
+                  onBlur={() => {
+                    setFocusedInput(null);
+                  }}
+                  onSelectionChange={() => {
+                    // Keep focus
+                  }}
+                />
+              </Box>
+              {errors.email && (
+                <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
+                  {errors.email}
+                </FormControl.ErrorMessage>
+              )}
             </FormControl>
 
             {/* Password */}
             <FormControl isInvalid={!!errors.password}>
               <FormControl.Label>Password</FormControl.Label>
-              <Input
-                placeholder="Enter your password"
-                value={formData.password}
-                onChangeText={(text) => setFormData(prev => ({ ...prev, password: text }))}
-                secureTextEntry
-                textContentType="password"
+              <Box
+                borderWidth={focusedInput === 'password' ? 2 : 1}
+                borderRadius={6}
+                borderColor={getBorderColor('password', !!errors.password)}
                 bg={inputBg}
-                color={inputText}
-                placeholderTextColor={inputPlaceholder}
-                borderColor={inputBorder}
-                _focus={{ borderColor: 'primary.500' }}
-              />
-              <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
-                {errors.password}
-              </FormControl.ErrorMessage>
+              >
+                <TextInput
+                  style={[
+                    inputStyle,
+                    { borderWidth: 0, outlineStyle: 'none' }
+                  ]}
+                  placeholder="Enter your password"
+                  placeholderTextColor={inputPlaceholder}
+                  value={formData.password}
+                  onChangeText={handlePasswordChange}
+                  secureTextEntry
+                  textContentType="password"
+                  editable={true}
+                  selectTextOnFocus={false}
+                  autoFocus={false}
+                  returnKeyType={isLogin ? "done" : "next"}
+                  blurOnSubmit={isLogin}
+                  clearButtonMode="never"
+                  onFocus={(e) => {
+                    setFocusedInput('password');
+                    e.stopPropagation();
+                  }}
+                  onBlur={() => {
+                    setFocusedInput(null);
+                  }}
+                  onSelectionChange={() => {
+                    // Keep focus
+                  }}
+                />
+              </Box>
+              {errors.password && (
+                <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
+                  {errors.password}
+                </FormControl.ErrorMessage>
+              )}
             </FormControl>
 
             {/* Confirm Password (Register only) */}
             {!isLogin && (
               <FormControl isInvalid={!!errors.confirmPassword}>
                 <FormControl.Label>Confirm Password</FormControl.Label>
-                <Input
-                  placeholder="Confirm your password"
-                  value={formData.confirmPassword}
-                  onChangeText={(text) => setFormData(prev => ({ ...prev, confirmPassword: text }))}
-                  secureTextEntry
-                  textContentType="password"
+                <Box
+                  borderWidth={focusedInput === 'confirmPassword' ? 2 : 1}
+                  borderRadius={6}
+                  borderColor={getBorderColor('confirmPassword', !!errors.confirmPassword)}
                   bg={inputBg}
-                  color={inputText}
-                  placeholderTextColor={inputPlaceholder}
-                  borderColor={inputBorder}
-                  _focus={{ borderColor: 'primary.500' }}
-                />
-                <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
-                  {errors.confirmPassword}
-                </FormControl.ErrorMessage>
+                >
+                  <TextInput
+                    style={[
+                      inputStyle,
+                      { borderWidth: 0, outlineStyle: 'none' }
+                    ]}
+                    placeholder="Confirm your password"
+                    placeholderTextColor={inputPlaceholder}
+                    value={formData.confirmPassword}
+                    onChangeText={handleConfirmPasswordChange}
+                    secureTextEntry
+                    textContentType="password"
+                    editable={true}
+                    selectTextOnFocus={false}
+                    autoFocus={false}
+                    returnKeyType="done"
+                    blurOnSubmit={true}
+                    clearButtonMode="never"
+                    onFocus={(e) => {
+                      setFocusedInput('confirmPassword');
+                      e.stopPropagation();
+                    }}
+                    onBlur={() => {
+                      setFocusedInput(null);
+                    }}
+                    onSelectionChange={() => {
+                      // Keep focus
+                    }}
+                  />
+                </Box>
+                {errors.confirmPassword && (
+                  <FormControl.ErrorMessage leftIcon={<WarningOutlineIcon size="xs" />}>
+                    {errors.confirmPassword}
+                  </FormControl.ErrorMessage>
+                )}
               </FormControl>
             )}
 
@@ -315,8 +418,7 @@ export default function AuthScreen() {
             </Pressable>
           </VStack>
         </VStack>
-      </Center>
-        </ScrollView>
+        </Box>
       </KeyboardAvoidingView>
     </Box>
   );

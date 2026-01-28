@@ -19,7 +19,7 @@ class ApiClient {
   // Prevent multiple simultaneous refresh calls that can trigger server rate limit (429)
   private refreshPromise: Promise<AuthTokens> | null = null;
 
-  constructor(baseURL: string = (process.env.EXPO_PUBLIC_API_URL as string) || 'http://localhost:3000/api') {
+  constructor(baseURL: string = (process.env.EXPO_PUBLIC_API_URL as string) || 'http://192.168.1.63:3000/api') {
     this.baseURL = baseURL;
     this.client = axios.create({
       baseURL,
@@ -65,9 +65,10 @@ class ApiClient {
             originalRequest.headers.Authorization = `Bearer ${this.tokens?.accessToken}`;
             return this.client(originalRequest);
           } catch (refreshError) {
-            // Refresh failed, redirect to login
-            await this.logout();
-            throw refreshError;
+            // Refresh failed, but don't auto-logout - let user stay logged in until manual logout
+            // Just return the original error so the request fails gracefully
+            console.warn('Token refresh failed, but keeping user session active');
+            return Promise.reject(error);
           }
         }
 

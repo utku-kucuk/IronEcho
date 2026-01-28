@@ -13,27 +13,7 @@ class RealmDatabase {
       this.realm = await Realm.open({
         schema: schemas,
         schemaVersion: SCHEMA_VERSION,
-        onMigration: (oldRealm: any, newRealm: any) => {
-          // Handle migrations here if needed
-          console.log('Realm migration running...');
-          try {
-            if (oldRealm.schemaVersion < 2) {
-              const oldStatuses = oldRealm.objects('SyncStatus');
-              const source = oldStatuses && oldStatuses.length > 0 ? oldStatuses[0] : undefined;
-              const payload = {
-                _id: 'sync_status',
-                isOnline: source?.isOnline ?? false,
-                isSyncing: source?.isSyncing ?? false,
-                lastSync: source?.lastSync ?? undefined,
-                pendingCount: source?.pendingCount ?? 0,
-                error: source?.error ?? undefined
-              };
-              newRealm.create('SyncStatus', payload, Realm.UpdateMode.Modified);
-            }
-          } catch (e) {
-            console.log('Migration error while seeding SyncStatus:', e);
-          }
-        }
+        deleteRealmIfMigrationNeeded: true // Delete and recreate database if migration needed (cannot use with onMigration)
       });
 
       this.isInitialized = true;

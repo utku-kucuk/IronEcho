@@ -18,15 +18,16 @@ import {
   ScrollView,
   useColorMode,
 } from 'native-base';
-import { FlatList } from 'react-native';
+import { FlatList, TextInput, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { realmDB } from '../database/realm';
 import { saveDailyOverride, getTodaysProgram, DEFAULT_WEEKLY_PROGRAM, ProgramExerciseTemplate } from '../services/weeklyProgram';
 import { getCatalog, addExerciseName } from '../services/exerciseCatalog';
 import { useAuth } from '../context/AuthContext';
 import { PresetExercise, ExerciseImage } from '../types';
 import { ExerciseImageService } from '../services/exerciseImageService';
+import { StableTextInput } from '../components/StableTextInput';
 
 type ExerciseSetForm = { reps: string; weight: string };
 type ExerciseForm = {
@@ -56,6 +57,18 @@ export default function WorkoutEntryScreen() {
   const inputText = colorMode === 'dark' ? 'gray.100' : 'gray.800';
   const inputPlaceholder = colorMode === 'dark' ? 'gray.400' : 'gray.500';
   const borderColor = colorMode === 'dark' ? 'gray.700' : 'gray.200';
+  
+  // TextInput styles
+  const textInputStyle = {
+    backgroundColor: colorMode === 'dark' ? '#1F2937' : '#FFFFFF',
+    color: colorMode === 'dark' ? '#F3F4F6' : '#1F2937',
+    borderWidth: 1,
+    borderColor: borderColor,
+    borderRadius: 6,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 40,
+  };
 
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
   // Date parts for selectable UI
@@ -69,6 +82,7 @@ export default function WorkoutEntryScreen() {
   const [targets, setTargets] = useState<Record<number, number | null>>({});
   const [weekday, setWeekday] = useState<string | null>(null);
   const [level, setLevel] = useState<'beginner' | 'intermediate' | 'advanced' | null>(null);
+  const [focusedInputId, setFocusedInputId] = useState<string | null>(null);
 
   const scrollRef = useRef<any>(null);
 
@@ -125,21 +139,45 @@ export default function WorkoutEntryScreen() {
       prev.map((ex, i) => {
         if (i !== idx) return ex;
         const next: any = { ...ex, [field]: value };
-        if (field === 'name') {
-          const def = (exerciseGroupMap || {})[value];
+        if (field === 'name' && value) {
+          // When exercise name is selected, load all default values from profile
+          const exerciseName = value as string;
+          const def = (exerciseGroupMap || {})[exerciseName];
           if (def) { next.muscleGroup = def; }
-          const prof = (exerciseProfileMap || {})[value] || {};
-          if (prof.group) { next.muscleGroup = prof.group; }
+          
+          // Try exact match first, then case-insensitive match
+          let prof = (exerciseProfileMap || {})[exerciseName] || {};
+          
+          // If not found, try case-insensitive search
+          if (!prof || Object.keys(prof).length === 0) {
+            const lowerName = exerciseName.toLowerCase();
+            const matchingKey = Object.keys(exerciseProfileMap || {}).find(
+              key => key.toLowerCase() === lowerName
+            );
+            if (matchingKey) {
+              prof = exerciseProfileMap[matchingKey];
+            }
+          }
+          
+          // Apply muscle group if available in profile (overrides legacy group map)
+          if (prof.group) {
+            next.muscleGroup = prof.group;
+          }
+          // Apply type if available in profile
           if (prof.type) {
             next.type = prof.type as any;
           }
+          // Apply weightBased: use profile value if available, otherwise infer from type
           if (prof.weightBased != null) {
             next.weightBased = !!prof.weightBased;
           } else if (prof.type) {
             const t = exerciseTypes.find(t => t.name === prof.type);
             if (t) { next.weightBased = t.weightBased; }
           }
-          if (prof.restMin != null) { next.restMin = prof.restMin; }
+          // Apply restMin if available in profile
+          if (prof.restMin != null) {
+            next.restMin = prof.restMin;
+          }
         }
         // If editing an existing workout, keep sets in sync with aggregated inputs
         if (editWorkoutId) {
@@ -201,18 +239,35 @@ export default function WorkoutEntryScreen() {
   const repOptions = Array.from({ length: 30 }).map((_, i) => String(i + 1));
   const weightOptions = Array.from({ length: 81 }).map((_, i) => (i * 2.5).toFixed(1).replace(/\.0$/, ''));
 
+  // Load profile map function
+  const loadProfileMap = async () => {
+    if (!user) return;
+    try {
+      const cat = await getCatalog(user._id);
+      setExerciseOptions(cat.exercises);
+      setMuscleGroups(cat.muscleGroups);
+      setExerciseTypes(cat.types);
+      setExerciseGroupMap((cat as any).exerciseGroups || {});
+      setExerciseProfileMap((cat as any).exerciseProfiles || {});
+    } catch (error) {
+      console.error('Failed to load profile map:', error);
+    }
+  };
+
+  // Reload profile map when screen comes into focus (e.g., returning from settings)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadProfileMap();
+    }, [user])
+  );
+
   // Prefill from navigation if provided, else auto-load today's plan
   useEffect(() => {
     (async () => {
       try {
         if (!user) return;
         // Load dynamic catalogs
-        const cat = await getCatalog(user._id);
-        setExerciseOptions(cat.exercises);
-        setMuscleGroups(cat.muscleGroups);
-        setExerciseTypes(cat.types);
-        setExerciseGroupMap((cat as any).exerciseGroups || {});
-        setExerciseProfileMap((cat as any).exerciseProfiles || {});
+        await loadProfileMap();
         const editId: string | undefined = route.params?.editWorkoutId;
         if (editId) {
           const existing = realmDB.getWorkoutById(editId);
@@ -332,6 +387,28 @@ export default function WorkoutEntryScreen() {
     try {
       if (!user) throw new Error('Not authenticated');
 
+      // Validate all exercises have names
+      const exercisesWithoutNames = exercises.filter(e => !e.name || e.name.trim() === '');
+      if (exercisesWithoutNames.length > 0) {
+        toast.show({
+          title: 'Validation Error',
+          description: 'Please select an exercise for all exercises. Exercise not selected.',
+          duration: 5000
+        });
+        return;
+      }
+
+      // Validate exercises have at least one set with reps
+      const exercisesWithoutSets = exercises.filter(e => !e.sets || e.sets.length === 0 || !e.sets.some(s => s.reps && s.reps.trim() !== ''));
+      if (exercisesWithoutSets.length > 0) {
+        toast.show({
+          title: 'Validation Error',
+          description: 'All exercises must have at least one set with reps.',
+          duration: 5000
+        });
+        return;
+      }
+
       const parsedExercises = exercises
         .filter(e => e.name.trim() && e.sets.some(s => !!s.reps))
         .map(e => ({
@@ -385,6 +462,18 @@ export default function WorkoutEntryScreen() {
   const saveSchemaOverride = async () => {
     try {
       if (!user) throw new Error('Not authenticated');
+
+      // Validate all exercises have names
+      const invalidExercises = exercises.filter(e => !e.name || e.name.trim() === '');
+      if (invalidExercises.length > 0) {
+        toast.show({
+          title: 'Validation Error',
+          description: 'Please select an exercise for all exercises. Exercise not selected.',
+          duration: 5000
+        });
+        return;
+      }
+
       const dateISO: string = route.params?.dateISO || new Date().toISOString().slice(0,10);
       const plan: ProgramExerciseTemplate[] = exercises.map((e) => ({
         name: e.name,
@@ -397,6 +486,10 @@ export default function WorkoutEntryScreen() {
         , defaultWeight: e.uniformWeight ? parseFloat(e.uniformWeight) : undefined
       }));
       await saveDailyOverride(user._id, dateISO, plan);
+      toast.show({
+        title: 'Saved',
+        description: 'Daily program saved successfully'
+      });
       if (navigation.canGoBack()) {
         navigation.goBack();
       } else {
@@ -483,16 +576,32 @@ export default function WorkoutEntryScreen() {
             </HStack>
             <FormControl mt={2}>
               <FormControl.Label>Notes</FormControl.Label>
-              <Input
-                value={notes}
-                onChangeText={setNotes}
-                placeholder="Optional notes"
-                bg={inputBg}
-                color={inputText}
-                placeholderTextColor={inputPlaceholder}
-                borderColor={borderColor}
-                _focus={{ borderColor: 'primary.500' }}
-              />
+              <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                <StableTextInput
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="Optional notes"
+                  style={[textInputStyle, { borderWidth: 0 }]}
+                  placeholderTextColor={inputPlaceholder}
+                  multiline={true}
+                  numberOfLines={3}
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                  onSubmitEditing={() => Keyboard.dismiss()}
+                  onFocus={() => {
+                    // Keep focus
+                  }}
+                  onBlur={() => {
+                    // Allow blur naturally
+                  }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </Box>
             </FormControl>
           </VStack>
         )}
@@ -599,74 +708,124 @@ export default function WorkoutEntryScreen() {
                 <HStack space={2}>
                   <FormControl flex={1}>
                     <FormControl.Label>Sets</FormControl.Label>
-                    <Input keyboardType="number-pad" value={String(ex.setsCount ?? ex.sets.length)} onChangeText={t => {
-                      const val = parseInt(t.replace(/[^0-9]/g, ''), 10) || 0;
-                      updateExercise(idx, 'setsCount' as any, val as any);
-                    }} />
+                    <Select
+                      selectedValue={String(ex.setsCount ?? ex.sets.length)}
+                      onValueChange={v => updateExercise(idx, 'setsCount' as any, parseInt(v, 10))}
+                      _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                      placeholder="Select sets"
+                    >
+                      {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
+                        <Select.Item key={`sets-schema-${idx}-${num}`} label={String(num)} value={String(num)} />
+                      ))}
+                    </Select>
                   </FormControl>
                   <FormControl flex={1}>
                     <FormControl.Label>Reps</FormControl.Label>
-                    <Input keyboardType="number-pad" value={String(ex.repsCount ?? (ex.sets[0]?.reps || ''))} onChangeText={t => updateExercise(idx, 'repsCount' as any, t as any)} />
+                    <Select
+                      selectedValue={String(ex.repsCount ?? (ex.sets[0]?.reps || ''))}
+                      onValueChange={v => updateExercise(idx, 'repsCount' as any, v)}
+                      _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                      placeholder="Select reps"
+                    >
+                      {Array.from({ length: 60 }, (_, i) => i + 1).map(num => (
+                        <Select.Item key={`reps-schema-${idx}-${num}`} label={String(num)} value={String(num)} />
+                      ))}
+                    </Select>
                   </FormControl>
                 </HStack>
+                  <FormControl>
+                    <FormControl.Label>Set rest (min)</FormControl.Label>
+                    <Select
+                      selectedValue={ex.restMin != null ? String(ex.restMin) : '0'}
+                      onValueChange={v => updateExercise(idx, 'restMin' as any, parseFloat(v))}
+                      _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                      placeholder="Select rest"
+                    >
+                      {Array.from({ length: 21 }, (_, i) => {
+                        const value = i * 0.5;
+                        const label = value % 1 === 0 ? String(value) : `${Math.floor(value)}.30`;
+                        return (
+                          <Select.Item key={`rest-schema-${idx}-${value}`} label={label} value={String(value)} />
+                        );
+                      })}
+                    </Select>
+                  </FormControl>
                 {/* Weight input removed from schema mode - only shown in edit mode for existing workouts */}
               </VStack>
             ) : (
               <VStack space={2}>
                 <FormControl>
                   <FormControl.Label>Set rest (min)</FormControl.Label>
-                  <Input
-                    keyboardType="decimal-pad"
-                    value={ex.restMin != null ? String(ex.restMin) : ''}
-                    onChangeText={t => updateExercise(idx, 'restMin' as any, parseFloat(t.replace(/[^0-9.]/g, '')) || 0)}
-                    bg={inputBg}
-                    color={textPrimary}
-                    placeholderTextColor={inputPlaceholder}
-                    borderColor={borderColor}
-                    _focus={{ borderColor: 'primary.500' }}
-                  />
+                  <Select
+                    selectedValue={ex.restMin != null ? String(ex.restMin) : '0'}
+                    onValueChange={v => updateExercise(idx, 'restMin' as any, parseFloat(v))}
+                    _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                    placeholder="Select rest"
+                  >
+                    {Array.from({ length: 21 }, (_, i) => {
+                      const value = i * 0.5;
+                      const label = value % 1 === 0 ? String(value) : `${Math.floor(value)}.30`;
+                      return (
+                        <Select.Item key={`rest-edit-${idx}-${value}`} label={label} value={String(value)} />
+                      );
+                    })}
+                  </Select>
                 </FormControl>
                 <HStack space={2}>
                   <FormControl flex={1}>
                     <FormControl.Label>Sets</FormControl.Label>
-                    <Input
-                      keyboardType="number-pad"
-                      value={String(ex.setsCount ?? ex.sets.length)}
-                      onChangeText={t => updateExercise(idx, 'setsCount' as any, parseInt(t.replace(/[^0-9]/g, ''), 10) || 1)}
-                      bg={inputBg}
-                      color={inputText}
-                      placeholderTextColor={inputPlaceholder}
-                      borderColor={borderColor}
-                      _focus={{ borderColor: 'primary.500' }}
-                    />
+                    <Select
+                      selectedValue={String(ex.setsCount ?? ex.sets.length)}
+                      onValueChange={v => updateExercise(idx, 'setsCount' as any, parseInt(v, 10))}
+                      _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                      placeholder="Select sets"
+                    >
+                      {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
+                        <Select.Item key={`sets-edit-${idx}-${num}`} label={String(num)} value={String(num)} />
+                      ))}
+                    </Select>
                   </FormControl>
                   <FormControl flex={1}>
                     <FormControl.Label>Reps</FormControl.Label>
-                    <Input
-                      keyboardType="number-pad"
-                      value={String(ex.repsCount ?? (ex.sets[0]?.reps || ''))}
-                      onChangeText={t => updateExercise(idx, 'repsCount' as any, t.replace(/[^0-9]/g, ''))}
-                      bg={inputBg}
-                      color={inputText}
-                      placeholderTextColor={inputPlaceholder}
-                      borderColor={borderColor}
-                      _focus={{ borderColor: 'primary.500' }}
-                    />
+                    <Select
+                      selectedValue={String(ex.repsCount ?? (ex.sets[0]?.reps || ''))}
+                      onValueChange={v => updateExercise(idx, 'repsCount' as any, v)}
+                      _selectedItem={{ bg: 'primary.100', endIcon: <CheckIcon size={4} color="primary.600" /> }}
+                      placeholder="Select reps"
+                    >
+                      {Array.from({ length: 60 }, (_, i) => i + 1).map(num => (
+                        <Select.Item key={`reps-edit-${idx}-${num}`} label={String(num)} value={String(num)} />
+                      ))}
+                    </Select>
                   </FormControl>
                 </HStack>
                 {ex.weightBased && (
                   <FormControl>
                     <FormControl.Label>Weight (kg)</FormControl.Label>
-                    <Input
-                      keyboardType="decimal-pad"
-                      value={String(ex.uniformWeight ?? (ex.sets[0]?.weight || ''))}
-                      onChangeText={t => updateExercise(idx, 'uniformWeight' as any, sanitizeDecimal(t))}
-                      bg={inputBg}
-                      color={inputText}
-                      placeholderTextColor={inputPlaceholder}
-                      borderColor={borderColor}
-                      _focus={{ borderColor: 'primary.500' }}
-                    />
+                    <Box borderWidth={1} borderRadius={6} borderColor={borderColor} bg={inputBg}>
+                      <StableTextInput
+                        style={[textInputStyle, { borderWidth: 0 }]}
+                        keyboardType="decimal-pad"
+                        value={String(ex.uniformWeight ?? (ex.sets[0]?.weight || ''))}
+                        onChangeText={t => updateExercise(idx, 'uniformWeight' as any, sanitizeDecimal(t))}
+                        placeholderTextColor={inputPlaceholder}
+                        returnKeyType="done"
+                        blurOnSubmit={true}
+                        onSubmitEditing={() => Keyboard.dismiss()}
+                        onFocus={() => {
+                          // Keep focus - don't let FlatList interfere
+                        }}
+                        onBlur={() => {
+                          // Allow blur naturally
+                        }}
+                        onTouchStart={(e) => {
+                          e.stopPropagation();
+                        }}
+                        onTouchEnd={(e) => {
+                          e.stopPropagation();
+                        }}
+                      />
+                    </Box>
                   </FormControl>
                 )}
                 {/* Note: all sets will use the same reps/weight values above */}
@@ -679,7 +838,8 @@ export default function WorkoutEntryScreen() {
             <Button variant="outline" onPress={addExercise} leftIcon={<Icon as={Ionicons} name="add-circle-outline" />}>Add Exercise</Button>
           </HStack>
         )}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator
       />
 
@@ -690,7 +850,7 @@ export default function WorkoutEntryScreen() {
           <Modal.Body>
             <FormControl>
               <FormControl.Label>Exercise Name</FormControl.Label>
-              <Input value={newExerciseName} onChangeText={setNewExerciseName} placeholder="e.g., Bulgarian Split Squat" />
+              <Input value={newExerciseName} onChangeText={setNewExerciseName} placeholder="e.g., Bulgarian Split Squat" editable={true} selectTextOnFocus={false} />
             </FormControl>
           </Modal.Body>
           <Modal.Footer>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import {
   Box,
   VStack,
@@ -22,7 +22,7 @@ import {
   Modal,
   useColorModeValue
 } from 'native-base';
-import { FlatList, Platform, ScrollView } from 'react-native';
+import { FlatList, Platform, ScrollView, TextInput, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -32,6 +32,59 @@ import { realmDB } from '../database/realm';
 import { Workout, ExerciseImage } from '../types';
 import { getTodayKey, getWeeklyProgram, Weekday, getDailyOverride } from '../services/weeklyProgram';
 import { ExerciseImageService } from '../services/exerciseImageService';
+import { StableTextInput } from '../components/StableTextInput';
+
+// Memoized WeightInput component to prevent re-renders
+const WeightInput = memo(({ 
+  value, 
+  placeholder, 
+  onChangeText, 
+  style, 
+  placeholderTextColor 
+}: { 
+  value: string; 
+  placeholder: string; 
+  onChangeText: (text: string) => void; 
+  style: any; 
+  placeholderTextColor: string;
+}) => {
+  return (
+    <TextInput
+      style={style}
+      keyboardType="decimal-pad"
+      placeholder={placeholder}
+      placeholderTextColor={placeholderTextColor}
+      value={value}
+      onChangeText={onChangeText}
+      editable={true}
+      selectTextOnFocus={false}
+      autoFocus={false}
+      returnKeyType="done"
+      blurOnSubmit={false}
+      onSubmitEditing={() => {
+        // Don't dismiss keyboard on decimal-pad
+      }}
+      onFocus={() => {
+        // Keep focus
+      }}
+      onBlur={() => {
+        // Allow blur naturally
+      }}
+      onTouchStart={(e) => {
+        e.stopPropagation();
+      }}
+      onTouchEnd={(e) => {
+        e.stopPropagation();
+      }}
+    />
+  );
+}, (prevProps, nextProps) => {
+  // Only re-render if value or placeholder actually changed
+  return prevProps.value === nextProps.value &&
+         prevProps.placeholder === nextProps.placeholder;
+});
+
+WeightInput.displayName = 'WeightInput';
 
 export default function WorkoutScreen() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -65,10 +118,27 @@ export default function WorkoutScreen() {
   const textSecondary = useColorModeValue('gray.600', 'gray.300');
   const headerBorder = useColorModeValue('gray.200', 'gray.700');
   const dashedBorderColor = useColorModeValue('gray.300', 'gray.600');
+  const inputBg = useColorModeValue('white', 'gray.800');
+  const inputPlaceholder = useColorModeValue('gray.500', 'gray.400');
+  
+  // TextInput styles
+  const textInputStyle = {
+    backgroundColor: useColorModeValue('#FFFFFF', '#1F2937'),
+    color: useColorModeValue('#1F2937', '#F3F4F6'),
+    borderWidth: 1,
+    borderColor: useColorModeValue('#D1D5DB', '#4B5563'),
+    borderRadius: 6,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 40,
+  };
 
   useEffect(() => {
     loadWorkouts();
   }, []);
+
+  // Clean up weight change handlers when todayPlan changes
+
 
   const refreshProgramForDay = React.useCallback(async () => {
     if (!user) return;
@@ -107,10 +177,11 @@ export default function WorkoutScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
+      // Always refresh when screen comes into focus (e.g., returning from WeeklyProgramScreen)
       refreshProgramForDay();
       loadWorkouts();
       loadExerciseImages();
-    }, [refreshProgramForDay])
+    }, [user, selectedDay]) // Use user and selectedDay directly instead of refreshProgramForDay callback
   );
 
   const loadExerciseImages = () => {
@@ -127,7 +198,7 @@ export default function WorkoutScreen() {
   };
 
   // Calculate target weights function - takes level as parameter to ensure immediate update
-  // Now uses entered weights (sessionWeights) when available, otherwise falls back to history
+  // Uses historical data from workouts with matching exercise name AND set x rep scheme
   const calculateTargetsWithLevel = useCallback((currentLevel: 'beginner' | 'intermediate' | 'advanced') => {
     if (!user || !todayPlan || todayPlan.length === 0) return;
     // Use all sessions (not only same weekday) to better reflect real progression
@@ -138,30 +209,18 @@ export default function WorkoutScreen() {
       const setsCount = ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0);
       const repsCount = ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0);
 
-      // Check if user has entered a weight for this exercise
-      const enteredWeightStr = sessionWeights[idx];
-      const enteredWeight = enteredWeightStr ? parseFloat(enteredWeightStr) : null;
-
       // Fixed mid-range multipliers per level (beginner 7.5%, intermediate 4%, advanced 2.5%)
       const percent = currentLevel === 'beginner' ? 0.075
         : currentLevel === 'intermediate' ? 0.04
         : 0.025;
 
-      // If user entered a weight, calculate suggestion based on that weight and level
-      if (enteredWeight != null && !isNaN(enteredWeight) && enteredWeight > 0) {
-        let bumped = enteredWeight * (1 + percent);
-        if (bumped - enteredWeight < 0.5) bumped = enteredWeight + 0.5; // ensure visible progress
-        const suggested = Math.max(bumped, enteredWeight);
-        nextTargets[idx] = Number((Math.round(suggested * 10) / 10).toFixed(1));
-        return;
-      }
-
-      // Otherwise, use historical data
-      // Build history from recent workouts for the same exercise and scheme
+      // Build history from recent workouts for the same exercise name AND exact set x rep scheme
+      // Only include workouts where the exercise has the exact same number of sets and reps
       const history: Array<{ date: Date; avg: number }> = [];
       for (const w of all) {
         const match = w.exercises.find((e: any) => e.name?.toLowerCase() === (ex.name || '').toLowerCase());
         if (!match) continue;
+        // Check that set count matches AND all sets have the same rep count as the program
         const schemeMatches = match.sets.length === setsCount && match.sets.every((s: any) => s.reps === repsCount);
         if (!schemeMatches) continue;
         const weights = match.sets.map((s: any) => s.weight || 0).filter((v: number) => v > 0);
@@ -174,15 +233,24 @@ export default function WorkoutScreen() {
       history.sort((a, b) => b.date.getTime() - a.date.getTime());
       if (history.length === 0) { nextTargets[idx] = null; return; }
 
-      // Determine averaging window by level
+      // Determine minimum required data count and averaging window by level
+      // Beginner: requires 1 workout
+      // Intermediate: requires 2 workouts
+      // Advanced: requires 4 workouts
+      let requiredCount = 1;
       let windowSize = 1;
       if (currentLevel === 'intermediate') {
-        windowSize = Math.min(2, history.length);
+        requiredCount = 2;
+        windowSize = 2;
       } else if (currentLevel === 'advanced') {
-        // Use last 3-4 sessions if available
-        if (history.length >= 4) windowSize = 4;
-        else if (history.length >= 3) windowSize = 3;
-        else windowSize = history.length;
+        requiredCount = 4;
+        windowSize = 4;
+      }
+
+      // If we don't have enough historical data, return null (will show as '-')
+      if (history.length < requiredCount) {
+        nextTargets[idx] = null;
+        return;
       }
 
       const recent = history.slice(0, windowSize);
@@ -197,24 +265,54 @@ export default function WorkoutScreen() {
     });
 
     setTargets(nextTargets);
-  }, [todayPlan, user, sessionWeights]);
+  }, [todayPlan, user]);
 
-  // Calculate targets when dependencies change (including when weights are entered)
+  // Calculate targets when dependencies change (level, plan, or day changes)
+  // Note: sessionWeights is NOT a dependency - user input should not change suggestions
   useEffect(() => {
     if (user && todayPlan && todayPlan.length > 0) {
       calculateTargetsWithLevel(level);
     }
-  }, [todayPlan, selectedDay, user, level, sessionWeights, calculateTargetsWithLevel]);
+  }, [todayPlan, selectedDay, user, level, calculateTargetsWithLevel]);
 
   const saveTodayAsWorkout = () => {
     try {
       if (!user) throw new Error('Not authenticated');
+      
+      // Validate all exercises have names
+      const exercisesWithoutNames = todayPlan.filter((ex: any) => !ex.name || ex.name.trim() === '');
+      if (exercisesWithoutNames.length > 0) {
+        toast.show({
+          title: 'Validation Error',
+          description: 'Please select an exercise for all exercises. Exercise not selected.',
+          duration: 5000
+        });
+        return;
+      }
+
+      // Debug: Log sessionWeights to verify values are being captured
+      console.log('saveTodayAsWorkout - sessionWeights:', sessionWeights);
+      console.log('saveTodayAsWorkout - todayPlan length:', todayPlan.length);
+
+      // Map todayPlan to exercises, preserving original index for sessionWeights lookup
       const exercises = todayPlan
-        .filter((ex: any) => ex.name)
-        .map((ex: any, idx: number) => {
+        .map((ex: any, originalIdx: number) => {
+          // Skip exercises without names
+          if (!ex.name || ex.name.trim() === '') {
+            return null;
+          }
+          
           const setsCount = ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0);
           const repsCount = ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0);
-          const weightVal = parseFloat(sessionWeights[idx] || '0') || 0;
+          // Get weight value from sessionWeights using ORIGINAL index, default to 0 if empty or invalid
+          const weightStr = sessionWeights[originalIdx];
+          let weightVal = 0;
+          if (weightStr !== undefined && weightStr !== null && String(weightStr).trim() !== '') {
+            const parsed = parseFloat(String(weightStr).trim());
+            weightVal = isNaN(parsed) ? 0 : parsed;
+          }
+          console.log(`Exercise ${originalIdx} (${ex.name}): weightStr="${weightStr}", weightVal=${weightVal}, setsCount=${setsCount}, repsCount=${repsCount}`);
+          console.log(`Exercise data for ${ex.name}: sets=${JSON.stringify(Array.from({ length: Math.max(setsCount, 0) }).map(() => ({ reps: repsCount, weight: weightVal })))}`);
           return {
             name: ex.name,
             muscleGroup: ex.muscleGroup || 'other',
@@ -222,8 +320,23 @@ export default function WorkoutScreen() {
             weightBased: ex.weightBased !== false,
             sets: Array.from({ length: Math.max(setsCount, 0) }).map(() => ({ reps: repsCount, weight: weightVal }))
           };
-        });
-      const totalVolume = exercises.reduce((t: number, e: any) => t + e.sets.reduce((et: number, s: any) => et + (s.weight || 0) * s.reps, 0), 0);
+        })
+        .filter((ex: any) => ex !== null); // Remove null entries
+      
+      // Calculate total volume more carefully
+      const totalVolume = exercises.reduce((t: number, e: any) => {
+        if (!e || !e.sets) return t;
+        return t + e.sets.reduce((et: number, s: any) => {
+          if (!s) return et;
+          const weight = typeof s.weight === 'number' ? s.weight : (typeof s.weight === 'string' ? parseFloat(s.weight) || 0 : 0);
+          const reps = typeof s.reps === 'number' ? s.reps : (typeof s.reps === 'string' ? parseInt(s.reps, 10) || 0 : 0);
+          return et + (weight * reps);
+        }, 0);
+      }, 0);
+      
+      console.log('Calculated totalVolume:', totalVolume);
+      console.log('Exercises for saving:', JSON.stringify(exercises, null, 2));
+      
       realmDB.createWorkout({
         userId: user._id,
         date: new Date(),
@@ -234,6 +347,8 @@ export default function WorkoutScreen() {
         clientTimestamp: new Date()
       } as any);
       toast.show({ title: 'Saved', description: 'Workout saved locally' });
+      // Clear session weights after saving
+      setSessionWeights({});
       // refresh recent list
       loadWorkouts();
     } catch (e: any) {
@@ -269,9 +384,15 @@ export default function WorkoutScreen() {
   };
 
   const getTotalVolume = (workout: Workout) => {
+    if (!workout || !workout.exercises) return 0;
     return workout.exercises.reduce((total, exercise) => {
+      if (!exercise || !exercise.sets) return total;
       return total + exercise.sets.reduce((exerciseTotal, set) => {
-        return exerciseTotal + (set.weight || 0) * set.reps;
+        if (!set) return exerciseTotal;
+        // Ensure weight is a number, handle both number and string types
+        const weight = typeof set.weight === 'number' ? set.weight : (typeof set.weight === 'string' ? parseFloat(set.weight) || 0 : 0);
+        const reps = typeof set.reps === 'number' ? set.reps : (typeof set.reps === 'string' ? parseInt(set.reps, 10) || 0 : 0);
+        return exerciseTotal + (weight * reps);
       }, 0);
     }, 0);
   };
@@ -329,16 +450,30 @@ export default function WorkoutScreen() {
         </HStack>
         
         <VStack space={1}>
-          {item.exercises.slice(0, 2).map((exercise, index) => (
-            <HStack key={index} justifyContent="space-between">
-              <Text fontSize="sm" color={textPrimary} flex={1}>
-                {exercise.name}
-              </Text>
-              <Text fontSize="sm" color={textSecondary}>
-                {exercise.sets.length} set{exercise.sets.length !== 1 ? 's' : ''}
-              </Text>
-            </HStack>
-          ))}
+          {item.exercises.slice(0, 2).map((exercise: any, index: number) => {
+            // Calculate average weight for display
+            const weights = exercise.sets.map((s: any) => s.weight || 0).filter((w: number) => w > 0);
+            const avgWeight = weights.length > 0 
+              ? (weights.reduce((a: number, b: number) => a + b, 0) / weights.length).toFixed(1)
+              : '0';
+            return (
+              <HStack key={index} justifyContent="space-between">
+                <Text fontSize="sm" color={textPrimary} flex={1}>
+                  {exercise.name}
+                </Text>
+                <HStack space={2}>
+                  {exercise.weightBased !== false && (
+                    <Text fontSize="sm" color={textSecondary}>
+                      {avgWeight} kg
+                    </Text>
+                  )}
+                  <Text fontSize="sm" color={textSecondary}>
+                    {exercise.sets.length} set{exercise.sets.length !== 1 ? 's' : ''}
+                  </Text>
+                </HStack>
+              </HStack>
+            );
+          })}
           {item.exercises.length > 2 && (
             <Text fontSize="sm" color={textSecondary}>
               +{item.exercises.length - 2} more exercise{item.exercises.length - 2 !== 1 ? 's' : ''}
@@ -419,12 +554,19 @@ export default function WorkoutScreen() {
         <VStack space={2}>
           {todayPlan.map((ex: any, idx: number) => {
             const images = exerciseImages[ex.name] || [];
+            // Use stable key based on exercise name and index, not on value
+            const exerciseKey = `exercise-${idx}-${ex.name || 'unknown'}`;
             return (
-              <VStack key={`${ex.name}-${idx}`} space={1}>
+              <VStack key={exerciseKey} space={1}>
                 <HStack justifyContent="space-between" alignItems="center">
                   <VStack flex={1}>
                     <Text fontWeight="semibold" color={textPrimary}>{ex.name || 'Exercise'}</Text>
-                    <Text fontSize="xs" color={textSecondary}>{(ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0))} x {(ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0))}</Text>
+                    <HStack space={2} alignItems="center">
+                      <Text fontSize="xs" color={textSecondary}>{(ex.setsCount ?? (ex.defaultSets ? ex.defaultSets.length : 0))} x {(ex.repsCount ?? (ex.defaultSets && ex.defaultSets[0] ? ex.defaultSets[0].reps : 0))}</Text>
+                      {ex.restMin != null && ex.restMin > 0 && (
+                        <Text fontSize="xs" color={textSecondary}>• Rest: {ex.restMin} min</Text>
+                      )}
+                    </HStack>
                   </VStack>
                   <Text fontSize="sm" color="primary.600">Suggested: {targets[idx] != null ? `${targets[idx]} kg` : '-'}</Text>
                 </HStack>
@@ -435,20 +577,20 @@ export default function WorkoutScreen() {
                   return shouldShowWeight ? (
                     <HStack alignItems="center" space={2}>
                       <Text fontSize="xs" color={textSecondary}>Weight (kg):</Text>
-                      <Input
-                        flex={1}
-                        keyboardType="decimal-pad"
+                      <Box flex={1} borderWidth={1} borderRadius={6} borderColor={dashedBorderColor} bg={cardBg}>
+                        <WeightInput
+                          value={sessionWeights[idx] ?? ''}
                         placeholder={targets[idx] != null ? String(targets[idx]) : '0'}
-                        value={sessionWeights[idx] ?? ''}
                         onChangeText={(t) => {
-                          // Update the weight
-                          setSessionWeights((prev) => ({ ...prev, [idx]: t }));
-                          // Recalculate suggestions immediately when weight is entered
-                          // This will be handled by the useEffect that watches sessionWeights
-                        }}
-                        bg={cardBg}
-                        borderColor={dashedBorderColor}
-                      />
+                            setSessionWeights((prev) => {
+                              if (prev[idx] === t) return prev;
+                              return { ...prev, [idx]: t };
+                            });
+                          }}
+                          style={[textInputStyle, { borderWidth: 0, flex: 1 }]}
+                          placeholderTextColor={inputPlaceholder}
+                        />
+                      </Box>
                     </HStack>
                   ) : null;
                 })()}
@@ -509,17 +651,6 @@ export default function WorkoutScreen() {
     </Center>
   );
 
-  if (isLoading) {
-    return (
-      <Box flex={1} bg={pageBg} safeArea>
-        <Center flex={1}>
-          <Spinner size="lg" color="primary.500" />
-          <Text mt={4} color={textSecondary}>Loading workouts...</Text>
-        </Center>
-      </Box>
-    );
-  }
-
   // Apply date filter when showing all
   const getFilteredWorkouts = (): Workout[] => {
     if (!showAll) return workouts.slice(0, 6);
@@ -546,6 +677,29 @@ export default function WorkoutScreen() {
     }
     return getFilteredWorkouts();
   })();
+
+  // Memoize ListHeaderComponent to prevent re-renders
+  // IMPORTANT: This must be called before any conditional returns to follow Rules of Hooks
+  const memoizedListHeader = useMemo(() => (
+    <VStack>
+      {renderTodayPlan()}
+      {/* Save button for today's session */}
+      {todayPlan && todayPlan.length > 0 && (
+        <Button mt={2} colorScheme="primary" onPress={saveTodayAsWorkout} leftIcon={<Icon as={Ionicons} name="save" />}>Save Day</Button>
+      )}
+    </VStack>
+  ), [todayPlan, sessionWeights, targets, exerciseImages, level, selectedDay, isOffDay, loadFromDay, loadedFromDayTemp, cardBg, textPrimary, textSecondary, dashedBorderColor, inputPlaceholder, textInputStyle, saveTodayAsWorkout, calculateTargetsWithLevel, user, navigation, loadDayPicker, setLoadFromDay, setTodayPlan, setLoadedFromDayTemp, setSelectedImage, setIsImageModalOpen]);
+
+  if (isLoading) {
+    return (
+      <Box flex={1} bg={pageBg} safeArea>
+        <Center flex={1}>
+          <Spinner size="lg" color="primary.500" />
+          <Text mt={4} color={textSecondary}>Loading workouts...</Text>
+        </Center>
+      </Box>
+    );
+  }
 
   return (
     <Box flex={1} bg={pageBg} safeArea>
@@ -618,20 +772,15 @@ export default function WorkoutScreen() {
         data={listData}
         keyExtractor={(item: any, index: number) => String(item?._id ?? `i-${index}`)}
         renderItem={renderWorkoutItem}
-        ListHeaderComponent={() => (
-          <VStack>
-            {renderTodayPlan()}
-            {/* Save button for today's session */}
-            {todayPlan && todayPlan.length > 0 && (
-              <Button mt={2} colorScheme="primary" onPress={saveTodayAsWorkout} leftIcon={<Icon as={Ionicons} name="save" />}>Save Day</Button>
-            )}
-          </VStack>
-        )}
+        ListHeaderComponent={memoizedListHeader}
         ListEmptyComponent={renderEmptyState}
-        contentContainerStyle={{ padding: 16, paddingTop: 16 }}
-        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ padding: 16, paddingTop: 16, flexGrow: 1 }}
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="on-drag"
         contentInsetAdjustmentBehavior="always"
         showsVerticalScrollIndicator
+        removeClippedSubviews={false}
+        nestedScrollEnabled={false}
       />
 
       {/* Full Screen Single Image Modal */}

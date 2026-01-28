@@ -20,7 +20,7 @@ import { useSync } from '../context/SyncContext';
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
-  const { isOnline, isSyncing, pendingCount, lastSync, startSync } = useSync();
+  const { isOnline, isSyncing, pendingCount, lastSync, startSync, error } = useSync();
   const toast = useToast();
   const navigation = useNavigation();
   const { colorMode, toggleColorMode } = useColorMode();
@@ -120,19 +120,19 @@ export default function SettingsScreen() {
                   <HStack justifyContent="space-between">
                     <Text fontSize="sm" color={textSecondary}>Gender:</Text>
                     <Text fontSize="sm" color={textPrimary} textTransform="capitalize">
-                      {user.profile.gender}
+                      {user?.profile?.gender || 'N/A'}
                     </Text>
                   </HStack>
                   <HStack justifyContent="space-between">
                     <Text fontSize="sm" color={textSecondary}>Units:</Text>
                     <Text fontSize="sm" color={textPrimary} textTransform="capitalize">
-                      {user.profile.units}
+                      {user?.profile?.units || 'N/A'}
                     </Text>
                   </HStack>
                   <HStack justifyContent="space-between">
                     <Text fontSize="sm" color={textSecondary}>Language:</Text>
                     <Text fontSize="sm" color={textPrimary} textTransform="uppercase">
-                      {user.profile.language}
+                      {user?.profile?.language || 'N/A'}
                     </Text>
                   </HStack>
                 </VStack>
@@ -179,6 +179,40 @@ export default function SettingsScreen() {
                     {isSyncing ? 'Syncing...' : 'Idle'}
                   </Text>
                 </HStack>
+                {error && (
+                  <VStack space={2}>
+                    <HStack justifyContent="space-between">
+                      <Text fontSize="sm" color="red.500">Error:</Text>
+                      <Text fontSize="xs" color="red.500" flex={1} textAlign="right" numberOfLines={2}>
+                        {error}
+                      </Text>
+                    </HStack>
+                    {error.toLowerCase().includes('authentication') || error.toLowerCase().includes('log in') ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        colorScheme="red"
+                        onPress={async () => {
+                          try {
+                            await logout();
+                            toast.show({
+                              title: 'Logged out',
+                              description: 'Please log in again to sync',
+                            });
+                          } catch (err) {
+                            toast.show({
+                              title: 'Error',
+                              description: 'Failed to log out',
+                            });
+                          }
+                        }}
+                        leftIcon={<Icon as={Ionicons} name="log-out" size="sm" />}
+                      >
+                        Re-login Required
+                      </Button>
+                    ) : null}
+                  </VStack>
+                )}
               </VStack>
 
               {isOnline && (

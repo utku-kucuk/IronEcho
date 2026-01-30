@@ -59,7 +59,6 @@ IronEcho delivers a comprehensive suite of tools for the serious athlete.
   <img src="screenshots/6.png" width="220" />
   <img src="screenshots/7.png" width="220" />
   <img src="screenshots/8.png" width="220" />
-  <img src="screenshots/9.png" width="220" />
 </p>
 
 ## 🛠️ Technical Architecture

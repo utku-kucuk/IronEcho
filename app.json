@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/gym-images/benchpress/benchpress01.jpeg",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,6 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.ironEcho",
+      "deploymentTarget": "18.3",
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true

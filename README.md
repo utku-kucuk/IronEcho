@@ -61,7 +61,8 @@ IronEcho delivers a comprehensive suite of tools for the serious athlete.
   <img src="screenshots/8.png" width="220" />
 </p>
 
-## �️ Technical Architecture
+## 🛠️ Technical Architecture
+
 
 ### Frontend (Mobile)
 *   **Core**: React Native + Expo SDK 50+
